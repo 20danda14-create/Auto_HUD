@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Drift & Performance HUD Cockpit - Fail Safe Edition</title>
+    <title>Drift & Performance HUD Cockpit - Ultimate Safe Edition</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -66,7 +66,7 @@
         <button id="startBtn">SİSTEMLERİ BAŞLAT</button>
         <p style="color: #a4a4a4; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
             Pist ve Drift Telemetri Paketi Aktif.<br>
-            <span style="color: #00ff00;">Hata korumalı grafik motoru entegre edildi.</span>
+            <span style="color: #00ff00;">iOS Kilitlenme Korumalı Senkron Altyapı Entegre Edildi.</span>
         </p>
     </div>
 
@@ -153,13 +153,14 @@
         }
         window.addEventListener('resize', resize); resize();
 
-        startBtn.addEventListener('click', async () => {
-            // DEVRİMSEL DÜZELTME: Ekran donmalarını önlemek için arayüzü ve çizim motorunu İZİNLERDEN ÖNCE anında açıyoruz.
+        // KESİN DÜZELTME: async kelimesi fonksiyondan tamamen kaldırıldı. %100 Senkron akış sağlandı.
+        startBtn.addEventListener('click', () => {
+            // Adım 1: UI Elemanlarını Anında Aç (Hiçbir koşul ve sensör cevabı beklenmez)
             overlay.style.display = 'none';
             timers.lapStart = Date.now();
             animate();
 
-            // GPS'i güvenli (çökme korumalı) başlat
+            // Adım 2: GPS Altyapısını Başlat
             try {
                 if (navigator.geolocation) {
                     navigator.geolocation.watchPosition((pos) => {
@@ -207,32 +208,46 @@
                 } else {
                     telemetry.gpsStatus = "NOT SUPPORTED";
                 }
-            } catch (geoErr) { console.log(geoErr); }
+            } catch (geoErr) { console.log("GPS Başlatılamadı:", geoErr); }
 
-            // iOS GESTURE TOKEN KORUMASI: İzinleri birbirinden tamamen izole ayrı bloklarda istiyoruz.
-            try {
-                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    const orientPerm = await DeviceOrientationEvent.requestPermission(); 
-                    if(orientPerm === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation);
-                    }
-                } else {
-                    window.addEventListener('deviceorientation', handleOrientation);
-                }
-            } catch (e) { console.log('Yönelim izni atlandı/hatalı:', e); }
-
+            // Adım 3: iOS Birleşik Sensör İzin Akışı (.then() zinciri ile, kilitsiz mimari)
             try {
                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                    const motionPerm = await DeviceMotionEvent.requestPermission();
-                    if(motionPerm === 'granted') {
-                        window.addEventListener('devicemotion', handleMotion);
-                    }
+                    // iOS Cihazları için Master Hareket İzni İstemi (Yönelimi de kapsar)
+                    DeviceMotionEvent.requestPermission()
+                        .then((motionPerm) => {
+                            if (motionPerm === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation, true);
+                                window.addEventListener('devicemotion', handleMotion, true);
+                            } else {
+                                telemetry.gpsStatus = "SENSOR DENIED";
+                            }
+                        })
+                        .catch((e) => {
+                            console.log('iOS İzin hatası bypass edildi:', e);
+                            // Koruma Amacıyla Doğrudan Bağlamayı Dene
+                            window.addEventListener('deviceorientation', handleOrientation, true);
+                            window.addEventListener('devicemotion', handleMotion, true);
+                        });
+                } else if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // Alternatif iOS İzin Kanalı
+                    DeviceOrientationEvent.requestPermission()
+                        .then((orientPerm) => {
+                            if (orientPerm === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation, true);
+                                window.addEventListener('devicemotion', handleMotion, true);
+                            }
+                        })
+                        .catch((e) => console.log(e));
                 } else {
-                    window.addEventListener('devicemotion', handleMotion);
+                    // Android veya Masaüstü Cihazlar (İzin istemeden direkt bağla)
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                    window.addEventListener('devicemotion', handleMotion, true);
                 }
-            } catch (e) { 
-                console.log('Hareket izni hatası yutuldu (Normal):', e); 
-                window.addEventListener('devicemotion', handleMotion); // Android cihazlar için yedek bağlama
+            } catch (e) {
+                console.log('Sensör katmanı hatası yutuldu, yedek hat devrede:', e);
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                window.addEventListener('devicemotion', handleMotion, true);
             }
         });
 
@@ -471,4 +486,28 @@
             let pX = -vW / 2 + (isPortraitSimulated ? 42 : 55); let pY = vH / 2 - (isPortraitSimulated ? 95 : 110);
             ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(pX, pY, 145, 68); ctx.strokeStyle = theme.main; ctx.strokeRect(pX, pY, 145, 68);
             ctx.fillStyle = theme.main; ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
-            ctx.fillText(`0-100 KM/H : ${timers.p0_100.time.toFixed(2)}s`, pX + 6, pY + 12); ctx.fillText(`100-200 H  : ${timers.
+            ctx.fillText(`0-100 KM/H : ${timers.p0_100.time.toFixed(2)}s`, pX + 6, pY + 12); ctx.fillText(`100-200 H  : ${timers.p100_200.time.toFixed(2)}s`, pX + 6, pY + 23); ctx.fillText(`400M DRAG  : ${timers.d400m.time.toFixed(2)}s (${Math.round(timers.d400m.dist)}m)`, pX + 6, pY + 34);
+            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.moveTo(pX, pY+39); ctx.lineTo(pX+145, pY+39); ctx.stroke();
+            ctx.fillStyle = "#00ffff"; ctx.fillText(`CUR LAP: ${formatLapTime((Date.now() - timers.lapStart)/1000)}`, pX + 6, pY + 50); ctx.fillText(`BEST   : ${formatLapTime(timers.bestLap)}`, pX + 6, pY + 61);
+
+            // --- 9. ROAD GRADE & STOPPING ---
+            let rX = vW / 2 - 135 - (isPortraitSimulated ? 42 : 55);
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(rX, pY + 28, 135, 40); ctx.strokeStyle = theme.main; ctx.strokeRect(rX, pY + 28, 135, 40);
+            ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
+            ctx.fillText(`ROAD GRADE : ${telemetry.roadGrade.toFixed(1)}%`, rX + 6, pY + 40);
+            let stopDist = telemetry.speed > 3 ? Math.round((Math.pow(telemetry.speed/3.6,2))/(2*0.75*9.81)) : 0;
+            ctx.fillText(`EST STOPPING: ${stopDist} M`, rX + 6, pY + 54);
+
+            // --- 10. SYSTEM PARAMETRELERİ ---
+            let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
+            ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); 
+            ctx.fillText(`GPS : ${telemetry.gpsStatus} (±${telemetry.gpsAccuracy.toFixed(1)}M)`, -vW/2 + 20, statusY + 11);
+            ctx.textAlign = "right"; ctx.fillText(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 20, statusY); ctx.fillText(`STREAM : ${isStreaming ? 'ONLINE' : 'OFFLINE'}`, vW/2 - 20, statusY + 11);
+            
+            if (telemetry.warnings.length > 0) { ctx.fillStyle = "#ff3333"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; telemetry.warnings.forEach((warn, idx) => { ctx.fillText(`▶ ${warn} ◀`, 0, -vH/4 + (idx * 13)); }); }
+
+            ctx.restore(); requestAnimationFrame(animate);
+        }
+    </script>
+</body>
+</html>
