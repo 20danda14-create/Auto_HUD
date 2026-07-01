@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Drift & Performance HUD Cockpit</title>
+    <title>Drift & Performance HUD Cockpit - Fail Safe Edition</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -66,7 +66,7 @@
         <button id="startBtn">SİSTEMLERİ BAŞLAT</button>
         <p style="color: #a4a4a4; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
             Pist ve Drift Telemetri Paketi Aktif.<br>
-            <span style="color: #00ff00;">G-Force, Slip ve Dönüş Çapı ana gösterge paneline taşındı.</span>
+            <span style="color: #00ff00;">Hata korumalı grafik motoru entegre edildi.</span>
         </p>
     </div>
 
@@ -154,63 +154,86 @@
         window.addEventListener('resize', resize); resize();
 
         startBtn.addEventListener('click', async () => {
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition((pos) => {
-                    if (isSimulating) return;
-                    let currentSpeed = 0; const now = Date.now();
-                    telemetry.gpsAccuracy = pos.coords.accuracy;
-                    telemetry.gpsStatus = pos.coords.accuracy <= 6 ? "GOOD" : (pos.coords.accuracy <= 15 ? "OK" : "POOR");
+            // DEVRİMSEL DÜZELTME: Ekran donmalarını önlemek için arayüzü ve çizim motorunu İZİNLERDEN ÖNCE anında açıyoruz.
+            overlay.style.display = 'none';
+            timers.lapStart = Date.now();
+            animate();
 
-                    if (pos.coords.speed !== null && pos.coords.speed >= 0) {
-                        currentSpeed = pos.coords.speed * 3.6;
-                    } else if (lastLat !== null && lastGpsTime !== null) {
-                        const timeDelta = (now - lastGpsTime) / 1000;
-                        if (timeDelta > 0.2) {
-                            const distance = calculateDistance(lastLat, lastLon, pos.coords.latitude, pos.coords.longitude);
-                            const calculatedSpeedMS = distance / timeDelta;
-                            if (calculatedSpeedMS >= 0.1 && calculatedSpeedMS < 75) currentSpeed = calculatedSpeedMS * 3.6;
-                            if (timers.d400m.state === 1) timers.d400m.dist += distance;
-                        }
-                    }
-                    telemetry.speed = Math.round(currentSpeed);
-                    if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) telemetry.gpsHeading = pos.coords.heading;
+            // GPS'i güvenli (çökme korumalı) başlat
+            try {
+                if (navigator.geolocation) {
+                    navigator.geolocation.watchPosition((pos) => {
+                        if (isSimulating) return;
+                        let currentSpeed = 0; const now = Date.now();
+                        telemetry.gpsAccuracy = pos.coords.accuracy;
+                        telemetry.gpsStatus = pos.coords.accuracy <= 6 ? "GOOD" : (pos.coords.accuracy <= 15 ? "OK" : "POOR");
 
-                    if (pos.coords.altitude !== null) {
-                        let currentAlt = pos.coords.altitude;
-                        if (lastGpsTime !== null) {
-                            let dt = (now - lastGpsTime) / 1000;
-                            if (dt > 0.5) {
-                                let diffAlt = currentAlt - telemetry.lastAltitude;
-                                telemetry.verticalSpeed = (telemetry.verticalSpeed * 0.7) + ((diffAlt / dt) * 0.3);
-                                let speedMS = currentSpeed / 3.6;
-                                telemetry.roadGrade = speedMS > 1 ? (telemetry.verticalSpeed / speedMS) * 100 : 0;
-                                telemetry.lastAltitude = currentAlt;
+                        if (pos.coords.speed !== null && pos.coords.speed >= 0) {
+                            currentSpeed = pos.coords.speed * 3.6;
+                        } else if (lastLat !== null && lastGpsTime !== null) {
+                            const timeDelta = (now - lastGpsTime) / 1000;
+                            if (timeDelta > 0.2) {
+                                const distance = calculateDistance(lastLat, lastLon, pos.coords.latitude, pos.coords.longitude);
+                                const calculatedSpeedMS = distance / timeDelta;
+                                if (calculatedSpeedMS >= 0.1 && calculatedSpeedMS < 75) currentSpeed = calculatedSpeedMS * 3.6;
+                                if (timers.d400m.state === 1) timers.d400m.dist += distance;
                             }
-                        } else { telemetry.lastAltitude = currentAlt; }
-                        telemetry.altitude = Math.round(currentAlt);
-                    }
-                    lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
-                }, (err) => { 
-                    if(!isSimulating) {
-                        if (err.code === err.PERMISSION_DENIED) telemetry.gpsStatus = "PERM DENIED";
-                        else if (err.code === err.TIMEOUT) telemetry.gpsStatus = "TIMEOUT (INDOOR)";
-                        else telemetry.gpsStatus = "LOST";
-                    }
-                }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
-            }
+                        }
+                        telemetry.speed = Math.round(currentSpeed);
+                        if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) telemetry.gpsHeading = pos.coords.heading;
 
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try {
+                        if (pos.coords.altitude !== null) {
+                            let currentAlt = pos.coords.altitude;
+                            if (lastGpsTime !== null) {
+                                let dt = (now - lastGpsTime) / 1000;
+                                if (dt > 0.5) {
+                                    let diffAlt = currentAlt - telemetry.lastAltitude;
+                                    telemetry.verticalSpeed = (telemetry.verticalSpeed * 0.7) + ((diffAlt / dt) * 0.3);
+                                    let speedMS = currentSpeed / 3.6;
+                                    telemetry.roadGrade = speedMS > 1 ? (telemetry.verticalSpeed / speedMS) * 100 : 0;
+                                    telemetry.lastAltitude = currentAlt;
+                                }
+                            } else { telemetry.lastAltitude = currentAlt; }
+                            telemetry.altitude = Math.round(currentAlt);
+                        }
+                        lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
+                    }, (err) => { 
+                        if(!isSimulating) {
+                            if (err.code === err.PERMISSION_DENIED) telemetry.gpsStatus = "PERM DENIED";
+                            else if (err.code === err.TIMEOUT) telemetry.gpsStatus = "TIMEOUT (INDOOR)";
+                            else telemetry.gpsStatus = "LOST";
+                        }
+                    }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+                } else {
+                    telemetry.gpsStatus = "NOT SUPPORTED";
+                }
+            } catch (geoErr) { console.log(geoErr); }
+
+            // iOS GESTURE TOKEN KORUMASI: İzinleri birbirinden tamamen izole ayrı bloklarda istiyoruz.
+            try {
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                     const orientPerm = await DeviceOrientationEvent.requestPermission(); 
-                    const motionPerm = await DeviceMotionEvent.requestPermission();
-                    if(orientPerm === 'granted' && motionPerm === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation); window.addEventListener('devicemotion', handleMotion);
+                    if(orientPerm === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
                     }
-                } catch (e) { console.log(e); }
-            } else {
-                window.addEventListener('deviceorientation', handleOrientation); window.addEventListener('devicemotion', handleMotion);
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                }
+            } catch (e) { console.log('Yönelim izni atlandı/hatalı:', e); }
+
+            try {
+                if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const motionPerm = await DeviceMotionEvent.requestPermission();
+                    if(motionPerm === 'granted') {
+                        window.addEventListener('devicemotion', handleMotion);
+                    }
+                } else {
+                    window.addEventListener('devicemotion', handleMotion);
+                }
+            } catch (e) { 
+                console.log('Hareket izni hatası yutuldu (Normal):', e); 
+                window.addEventListener('devicemotion', handleMotion); // Android cihazlar için yedek bağlama
             }
-            overlay.style.display = 'none'; timers.lapStart = Date.now(); animate();
         });
 
         function handleOrientation(event) {
@@ -304,9 +327,9 @@
                 telemetry.speed = Math.round(85 + 50 * Math.sin(simTime * 0.4));
                 telemetry.compassHeading = (simTime * 15) % 360;
                 telemetry.pitch = 4 * Math.sin(simTime * 0.5);
-                telemetry.roll = 25 * Math.cos(simTime * 0.35); // Sert viraj simülasyonu
+                telemetry.roll = 25 * Math.cos(simTime * 0.35); 
                 telemetry.lonG = 0.4 * Math.cos(simTime * 0.4);
-                telemetry.latG = -0.8 * Math.sin(simTime * 0.35); // Yüksek yan G kuvveti
+                telemetry.latG = -0.8 * Math.sin(simTime * 0.35); 
                 telemetry.altitude = Math.round(150 + 15 * Math.sin(simTime * 0.1));
                 telemetry.verticalSpeed = 1 * Math.cos(simTime * 0.1);
                 telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
@@ -351,7 +374,7 @@
             let leftTapeX = -vW / 2 + (isPortraitSimulated ? 42 : 55);
             let rightTapeX = vW / 2 - 60 - (isPortraitSimulated ? 42 : 55);
 
-            // --- 1. EN ÜST: PUSULA ŞERİDİ (COMPASS RIBBON) ---
+            // --- 1. COMPASS RIBBON ---
             let ribbonY = -vH / 2 + (isPortraitSimulated ? 35 : 20);
             ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(-vW/3, ribbonY, (vW/3)*2, 22);
             ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.strokeRect(-vW/3, ribbonY, (vW/3)*2, 22);
@@ -372,43 +395,80 @@
             ctx.restore();
             ctx.fillStyle = "#ff3333"; ctx.beginPath(); ctx.moveTo(0, ribbonY + 24); ctx.lineTo(-5, ribbonY + 31); ctx.lineTo(5, ribbonY + 31); ctx.closePath(); ctx.fill();
 
-            // --- 2. ÜST MERKEZ: MİNİMAL DURUM CAYROSU (MINIMAL ATTITUDE WIDGET) ---
+            // --- 2. MINIMAL ATTITUDE WIDGET ---
             let attY = ribbonY + 55;
-            ctx.save();
-            ctx.translate(0, attY);
-            ctx.rotate(-telemetry.roll * Math.PI / 180);
+            ctx.save(); ctx.translate(0, attY); ctx.rotate(-telemetry.roll * Math.PI / 180);
             let pShift = telemetry.pitch * 1.5;
             ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(-30, pShift); ctx.lineTo(30, pShift); ctx.stroke(); // Mini Ufuk Çizgisi
-            ctx.beginPath(); ctx.moveTo(-15, pShift - 10); ctx.lineTo(15, pShift - 10); ctx.moveTo(-15, pShift + 10); ctx.lineTo(15, pShift + 10); ctx.stroke(); // ±10 derece kademeleri
+            ctx.beginPath(); ctx.moveTo(-30, pShift); ctx.lineTo(30, pShift); ctx.stroke(); 
+            ctx.beginPath(); ctx.moveTo(-15, pShift - 10); ctx.lineTo(15, pShift - 10); ctx.moveTo(-15, pShift + 10); ctx.lineTo(15, pShift + 10); ctx.stroke(); 
             ctx.restore();
-            // Sabit Referans Kanatlar (Uçak Göstergesi)
             ctx.strokeStyle = theme.main; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(-35, attY); ctx.lineTo(-15, attY); ctx.lineTo(-11, attY + 4); ctx.moveTo(35, attY); ctx.lineTo(15, attY); ctx.lineTo(11, attY + 4); ctx.moveTo(-2, attY); ctx.lineTo(2, attY); ctx.stroke();
-            // Dijital Gösterge
             ctx.fillStyle = theme.main; ctx.font = "9px monospace"; ctx.textAlign = "center";
             ctx.fillText(`P: ${telemetry.pitch >= 0 ? '+' : ''}${Math.round(telemetry.pitch)}°  R: ${Math.round(telemetry.roll)}°`, 0, attY - 18);
 
-            // --- 3. ANA MERKEZ: TRACTION CIRCLE & G-BALL (MAIN INST. SUITE) ---
+            // --- 3. TRACTION CIRCLE & G-BALL ---
             let gX = 0; let gY = attY + 95; let gBallRadius = 65;
-            // Çemberler (0.5G, 1.0G, 1.5G)
             ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.33, 0, 2*Math.PI); ctx.stroke();
             ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.66, 0, 2*Math.PI); ctx.stroke();
             ctx.strokeStyle = "rgba(255,255,255,0.3)";
             ctx.beginPath(); ctx.arc(gX, gY, gBallRadius, 0, 2*Math.PI); ctx.stroke();
-            // Aks Çizgileri
             ctx.beginPath(); ctx.moveTo(gX - gBallRadius, gY); ctx.lineTo(gX + gBallRadius, gY); ctx.moveTo(gX, gY - gBallRadius); ctx.lineTo(gX, gY + gBallRadius); ctx.stroke();
-            // G Grap Etiketleri
             ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "7px monospace"; ctx.textAlign = "center";
             ctx.fillText("0.5G", gX, gY - (gBallRadius*0.33) + 2); ctx.fillText("1.0G", gX, gY - (gBallRadius*0.66) + 2); ctx.fillText("1.5G", gX, gY - gBallRadius + 2);
-            // G-Topunun Konumu ve Vektör Çizgisi
-            let ballX = gX - (telemetry.latG * (gBallRadius / 1.5)); // 1.5G Maks Ölçek
+            let ballX = gX - (telemetry.latG * (gBallRadius / 1.5)); 
             let ballY = gY + (telemetry.lonG * (gBallRadius / 1.5));
-            // G-Vektör Çizgisi
             ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); ctx.stroke();
-            // Gerçek Zamanlı Parlayan G-Topu
             ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 5, 0, 2*Math.PI); ctx.fill();
-            // Dijital G-Kuvveti Yazıları
             ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
-            ctx.fillText(`LAT G: ${telemetry.latG.toFixed(2)}`, -gBallRadius - 10
+            ctx.fillText(`LAT G: ${telemetry.latG.toFixed(2)}`, -gBallRadius - 10, gY + 4);
+            ctx.textAlign = "left"; ctx.fillText(`LON G: ${telemetry.lonG.toFixed(2)}`, gBallRadius + 10, gY + 4);
+
+            // --- 4. SLIP / SKID INDICATOR ---
+            let slipY = gY + gBallRadius + 22;
+            ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5;
+            ctx.strokeRect(gX - 50, slipY, 100, 7);
+            ctx.beginPath(); ctx.moveTo(gX - 16, slipY); ctx.lineTo(gX - 16, slipY + 7); ctx.moveTo(gX + 16, slipY); ctx.lineTo(gX + 16, slipY + 7); ctx.stroke(); 
+            let slipBallX = gX - (telemetry.latG * 40);
+            slipBallX = Math.max(gX - 46, Math.min(gX + 46, slipBallX));
+            ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(slipBallX, slipY + 3.5, 3, 0, 2*Math.PI); ctx.fill();
+            ctx.font = "bold 8px monospace"; ctx.textAlign = "center"; ctx.fillText("SLIP / SKID", gX, slipY - 4);
+
+            // --- 5. YAW / RADIUS ---
+            let driftInfoY = slipY + 25;
+            ctx.fillStyle = "#00ffff"; ctx.font = "10px monospace"; ctx.textAlign = "center";
+            let radiusStr = (telemetry.radius > 0 && telemetry.radius < 1500) ? `${telemetry.radius} M` : '---';
+            ctx.fillText(`RADIUS: ${radiusStr}`, gX, driftInfoY);
+            ctx.fillStyle = theme.main; ctx.fillText(`YAW RATE: ${Math.round(telemetry.yawRate)}°/S`, gX, driftInfoY + 11);
+
+            // --- 6. SPEED TAPE ---
+            ctx.save(); ctx.beginPath(); ctx.rect(leftTapeX, -tapeH/2, 60, tapeH); ctx.clip();
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(leftTapeX, -tapeH/2, 60, tapeH);
+            ctx.strokeStyle = theme.main; ctx.strokeRect(leftTapeX, -tapeH/2, 60, tapeH);
+            ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
+            let startSpeed = Math.floor(telemetry.speed / 10) * 10 - 30;
+            for (let s = startSpeed; s <= startSpeed + 60; s += 10) { if (s < 0) continue; let sY = (telemetry.speed - s) * 3.5; ctx.beginPath(); ctx.moveTo(leftTapeX + 60, sY); ctx.lineTo(leftTapeX + 54, sY); ctx.stroke(); ctx.fillText(s, leftTapeX + 50, sY + 4); }
+            ctx.restore();
+            ctx.fillStyle = "black"; ctx.fillRect(leftTapeX - 5, -12, 70, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(leftTapeX - 5, -12, 70, 24);
+            ctx.fillStyle = theme.main; ctx.font = "bold 13px monospace"; ctx.textAlign = "left"; ctx.fillText(String(telemetry.speed).padStart(3,'0'), leftTapeX + 4, 5); ctx.font = "7px monospace"; ctx.fillText("KM/H", leftTapeX + 38, 4);
+
+            // --- 7. ALTITUDE TAPE ---
+            ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, 60, tapeH); ctx.clip();
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(rightTapeX, -tapeH/2, 60, tapeH);
+            ctx.strokeStyle = theme.main; ctx.strokeRect(rightTapeX, -tapeH/2, 60, tapeH);
+            ctx.fillStyle = theme.main; ctx.textAlign = "left"; ctx.font = "11px monospace";
+            let startAlt = Math.floor(telemetry.altitude / 20) * 20 - 40;
+            for (let a = startAlt; a <= startAlt + 80; a += 20) { let aY = (telemetry.altitude - a) * 1.2; ctx.beginPath(); ctx.moveTo(rightTapeX, aY); ctx.lineTo(rightTapeX + 6, aY); ctx.stroke(); ctx.fillText(a, rightTapeX + 10, aY + 4); }
+            ctx.restore();
+            ctx.fillStyle = "black"; ctx.fillRect(rightTapeX - 5, -12, 70, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(rightTapeX - 5, -12, 70, 24);
+            ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right"; ctx.fillText(telemetry.altitude + "M", rightTapeX + 60, 4);
+            let vsiX = rightTapeX + 72; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
+            ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, Math.max(-25, Math.min(25, -telemetry.verticalSpeed * 5)), 3, 0, 2*Math.PI); ctx.fill();
+
+            // --- 8. TIMERS & DRAG LAP ---
+            let pX = -vW / 2 + (isPortraitSimulated ? 42 : 55); let pY = vH / 2 - (isPortraitSimulated ? 95 : 110);
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(pX, pY, 145, 68); ctx.strokeStyle = theme.main; ctx.strokeRect(pX, pY, 145, 68);
+            ctx.fillStyle = theme.main; ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
+            ctx.fillText(`0-100 KM/H : ${timers.p0_100.time.toFixed(2)}s`, pX + 6, pY + 12); ctx.fillText(`100-200 H  : ${timers.
