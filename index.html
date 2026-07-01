@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Advanced Glass Cockpit HUD - Auto Stream Edition</title>
+    <title>Advanced Glass Cockpit HUD - Swapped & Calibrated</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -16,30 +16,40 @@
             padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
         #canvas { display: block; width: 100%; height: 100%; }
+        
+        /* Başlat Butonu Görünürlük ve Tasarım Tamiri */
         #overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             background: rgba(0,0,0,0.98); z-index: 100;
         }
-        button {
-            background: currentColor; color: black; border: none; padding: 16px 32px;
-            font-size: 1.2rem; font-weight: bold; cursor: pointer; border-radius: 6px;
-            box-shadow: 0 0 20px currentColor; margin-bottom: 15px; font-family: monospace;
+        #startBtn {
+            background: #00ff00 !important;
+            color: #000000 !important;
+            border: none; padding: 18px 36px;
+            font-size: 1.3rem; font-weight: bold;
+            cursor: pointer; border-radius: 8px;
+            box-shadow: 0 0 30px #00ff00;
+            font-family: monospace;
         }
+        
         .hud-controls {
             position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 15px; z-index: 10;
+            display: flex; gap: 10px; z-index: 10;
         }
         .control-btn {
-            background: rgba(0, 0, 0, 0.6); color: inherit; border: 1.5px solid currentColor;
-            padding: 8px 16px; font-size: 0.8rem; font-weight: bold; border-radius: 4px;
-            box-shadow: 0 0 8px rgba(0,0,0,0.5); margin: 0;
+            background: rgba(0, 0, 0, 0.7); color: inherit; border: 1.5px solid currentColor;
+            padding: 8px 14px; font-size: 0.75rem; font-weight: bold; border-radius: 4px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5); cursor: pointer;
         }
         .streaming-active {
             animation: blink 1.5s infinite;
             background: rgba(0, 150, 255, 0.25) !important;
-            border-color: #0096ff !important;
-            color: #0096ff !important;
+            border-color: #0096ff !important; color: #0096ff !important;
+        }
+        .sim-active {
+            background: rgba(255, 165, 0, 0.25) !important;
+            border-color: #ffa500 !important; color: #ffa500 !important;
         }
         @keyframes blink { 50% { opacity: 0.6; } }
     </style>
@@ -47,16 +57,17 @@
 <body>
 
     <div id="overlay">
-        <button id="startBtn" style="color: #00ff00;">SİSTEMLERİ BAŞLAT</button>
-        <p style="color: #666; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5;">
-            iPhone 14 Plus Canlı Veri Akış Modülü Aktif.<br>
-            Lütfen Kararlılık ve Konum İzinlerini Onaylayın.
+        <button id="startBtn">SİSTEMLERİ BAŞLAT</button>
+        <p style="color: #666; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
+            iPhone 14 Plus Donanım ve Aks Sapma Düzeltmesi Aktif.<br>
+            Lütfen Konum ve Jiroskop İzinlerini Onaylayın.
         </p>
     </div>
 
     <div class="hud-controls">
         <button id="calibrateBtn" class="control-btn">SIFIRLA</button>
         <button id="themeBtn" class="control-btn">TEMA</button>
+        <button id="simBtn" class="control-btn">SİMÜLASYON: KAPALI</button>
         <button id="streamBtn" class="control-btn">CANLI YAYIN BAŞLAT</button>
         <button id="lapBtn" class="control-btn">TUR ATLA</button>
     </div>
@@ -65,8 +76,8 @@
 
     <script>
         // ==========================================
-        // ADIM 2'DE KOPYALADIĞIN WEB APP URL'SİNİ BURAYA YAPIŞTIR:
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzJlLHS9oQzx6EYrHyJik7G25j0xoIUuYUKCbWpA2AKC84b7dy4cktyoPiE9Y3P-8Ce/exec";
+        // ADIM 2'DE KOPYALADIĞIN WEB APP URL'SİNİ BURAYA YAPIŞTIRABİLİRSİN:
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/1IzqoYHpdwrAy7So37lOgWq3yUMR3w7EC6oeO0TbT4_s/exec";
         // ==========================================
 
         const canvas = document.getElementById('canvas');
@@ -74,6 +85,7 @@
         const startBtn = document.getElementById('startBtn');
         const calibrateBtn = document.getElementById('calibrateBtn');
         const themeBtn = document.getElementById('themeBtn');
+        const simBtn = document.getElementById('simBtn');
         const streamBtn = document.getElementById('streamBtn');
         const lapBtn = document.getElementById('lapBtn');
         const overlay = document.getElementById('overlay');
@@ -104,18 +116,26 @@
             currentLap: 0, bestLap: 0, lapStart: 0
         };
 
-        // Canlı Akış Tampon Belleği ve Zaman Yönetimi
-        let isStreaming = false;
-        let streamBuffer = [];
-        let lastSampleTime = 0;
-        let lastSendTime = 0;
+        let isStreaming = false; let isSimulating = false;
+        let streamBuffer = []; let lastSampleTime = 0; let lastSendTime = 0;
 
         function setHUDColor(idx) { document.body.style.setProperty('--hud-color', THEMES[idx].main); }
         setHUDColor(currentThemeIdx);
         themeBtn.addEventListener('click', () => { currentThemeIdx = (currentThemeIdx + 1) % THEMES.length; setHUDColor(currentThemeIdx); });
 
+        // Simülasyon Modu Aç/Kapa Tetikleyicisi
+        simBtn.addEventListener('click', () => {
+            isSimulating = !isSimulating;
+            if(isSimulating) {
+                simBtn.classList.add('sim-active'); simBtn.innerText = "SİMÜLASYON: AÇIK";
+            } else {
+                simBtn.classList.remove('sim-active'); simBtn.innerText = "SİMÜLASYON: KAPALI";
+                telemetry.speed = 0; telemetry.latG = 0; telemetry.lonG = 0;
+            }
+        });
+
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371000; 
+            const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
@@ -130,6 +150,7 @@
         startBtn.addEventListener('click', async () => {
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition((pos) => {
+                    if (isSimulating) return;
                     let currentSpeed = 0; const now = Date.now();
                     telemetry.gpsAccuracy = pos.coords.accuracy;
                     telemetry.gpsStatus = pos.coords.accuracy <= 6 ? "GOOD" : (pos.coords.accuracy <= 15 ? "OK" : "POOR");
@@ -163,7 +184,7 @@
                         telemetry.altitude = Math.round(currentAlt);
                     }
                     lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
-                }, (err) => { telemetry.gpsStatus = "LOST"; }, { enableHighAccuracy: true, maximumAge: 0 });
+                }, (err) => { if(!isSimulating) telemetry.gpsStatus = "LOST"; }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
             }
 
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -178,20 +199,21 @@
         });
 
         function handleOrientation(event) {
-            if (event.beta === null || event.gamma === null) return;
+            if (isSimulating || event.beta === null || event.gamma === null) return;
             telemetry.rawPitch = event.beta; telemetry.rawRoll = event.gamma;
             if (!isCalibrated) { offset.pitch = event.beta; offset.roll = event.gamma; isCalibrated = true; }
             let relativePitch = event.beta - offset.pitch; let relativeRoll = event.gamma - offset.roll;
             let filterFactor = telemetry.speed < 5 ? 0.20 : (telemetry.speed > 100 ? 0.015 : 0.04);
             telemetry.pitch = (telemetry.pitch * (1 - filterFactor)) + (relativePitch * filterFactor);
             telemetry.roll = (telemetry.roll * (1 - filterFactor)) + (relativeRoll * filterFactor);
+            
             if (event.webkitCompassHeading) telemetry.compassHeading = event.webkitCompassHeading;
             else if (event.alpha) telemetry.compassHeading = 360 - event.alpha;
             telemetry.horizonQuality = (Math.abs(telemetry.pitch) > 45 || Math.abs(telemetry.roll) > 50) ? "DEGRADED" : "OK";
         }
 
         function handleMotion(event) {
-            if (!event.accelerationIncludingGravity) return;
+            if (isSimulating || !event.accelerationIncludingGravity) return;
             let acc = event.accelerationIncludingGravity;
             if (offset.ax === 0 && offset.ay === 0) { offset.ax = acc.x; offset.ay = acc.y; offset.az = acc.z - 9.81; return; }
             telemetry.lateralX = acc.x; telemetry.longitudinalY = acc.y;
@@ -201,16 +223,13 @@
         }
 
         calibrateBtn.addEventListener('click', () => {
+            if (isSimulating) return;
             offset.pitch = telemetry.rawPitch; offset.roll = telemetry.rawRoll;
             offset.ax = telemetry.lateralX || 0; offset.ay = telemetry.longitudinalY || 0; isCalibrated = true;
         });
 
-        // Canlı Yayın Tetikleyici Buton Yönetimi
         streamBtn.addEventListener('click', () => {
-            if(GOOGLE_SCRIPT_URL === "BURAYA_APPS_SCRIPT_DAĞITIM_URL_GELECEK") {
-                alert("Lütfen önce kodun içine Google Apps Script Dağıtım URL'sini ekleyin!");
-                return;
-            }
+            if(GOOGLE_SCRIPT_URL.includes("BURAYA")) { alert("Lütfen kodun içindeki URL alanını güncelleyin!"); return; }
             isStreaming = !isStreaming;
             if (isStreaming) {
                 streamBuffer = []; lastSendTime = Date.now();
@@ -241,39 +260,21 @@
             if (speed === 0 && (timers.p0_100.state === 2 || timers.d400m.state === 2)) { timers.p0_100.state = 0; timers.p100_200.state = 0; timers.d400m.state = 0; }
         }
 
-        // AKILLI VERİ AKIŞ MOTORU (KOTA DOSTU BATCH STREAM)
         function handleLiveStreaming(now) {
             if (!isStreaming) return;
-
-            // Her 1 saniyede bir verilerden bir örnek/enstantane al ve tampona ekle
             if (now - lastSampleTime >= 1000) {
                 streamBuffer.push({
                     time: new Date().toLocaleTimeString('tr-TR'),
-                    pitch: telemetry.pitch.toFixed(2),
-                    roll: telemetry.roll.toFixed(2),
-                    speed: telemetry.speed,
-                    heading: Math.round(telemetry.heading),
-                    alt: telemetry.altitude,
-                    latG: telemetry.latG.toFixed(3),
-                    lonG: telemetry.lonG.toFixed(3),
-                    vertG: telemetry.vertG.toFixed(3),
+                    pitch: telemetry.pitch.toFixed(2), roll: telemetry.roll.toFixed(2),
+                    speed: telemetry.speed, heading: Math.round(telemetry.heading), alt: telemetry.altitude,
+                    latG: telemetry.latG.toFixed(3), lonG: telemetry.lonG.toFixed(3), vertG: telemetry.vertG.toFixed(3),
                     grade: telemetry.roadGrade.toFixed(1)
                 });
                 lastSampleTime = now;
             }
-
-            // Her 3 saniyede bir biriken 3 satırlık veriyi tek seferde Google Script'e uçur
             if (now - lastSendTime >= 3000 && streamBuffer.length > 0) {
-                const payload = JSON.stringify(streamBuffer);
-                streamBuffer = []; // Gönderim başladığı an yeni veriler için tamponu temizle
-                lastSendTime = now;
-
-                fetch(GOOGLE_SCRIPT_URL, {
-                    method: "POST",
-                    mode: "no-cors", // CORS engellerini aşmak için kritik mod
-                    headers: { "Content-Type": "text/plain" },
-                    body: payload
-                }).catch(err => console.log("Stream Hatası: ", err));
+                const payload = JSON.stringify(streamBuffer); streamBuffer = []; lastSendTime = now;
+                fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: payload }).catch(e => console.log(e));
             }
         }
 
@@ -281,7 +282,33 @@
             const w = window.innerWidth; const h = window.innerHeight; const theme = THEMES[currentThemeIdx];
             let now = Date.now(); let dt = (now - lastUpdateTime) / 1000; lastUpdateTime = now;
 
-            if (dt > 0) {
+            // --- PUSULA VE SENSÖR HESAPLAMA DOĞRULTMA ALANI ---
+            if (isSimulating) {
+                let simTime = now / 1000;
+                telemetry.speed = Math.round(75 + 45 * Math.sin(simTime * 0.4));
+                telemetry.compassHeading = (simTime * 12) % 360;
+                telemetry.pitch = 6 * Math.sin(simTime * 0.6);
+                telemetry.roll = 14 * Math.cos(simTime * 0.4);
+                telemetry.lonG = 0.3 * Math.cos(simTime * 0.4);
+                telemetry.latG = -0.5 * Math.sin(simTime * 0.4);
+                telemetry.altitude = Math.round(180 + 25 * Math.sin(simTime * 0.15));
+                telemetry.verticalSpeed = 2 * Math.cos(simTime * 0.15);
+                telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
+                telemetry.gpsStatus = "GOOD"; telemetry.gpsAccuracy = 1.1; telemetry.heading = telemetry.compassHeading; telemetry.sensorType = "SIMULATION";
+            } else {
+                // Kritik Pusula Düzeltmesi: Ekran dikey kilitliyken yana monte edilirse eksen kaymasını +90 derece ile tamir et
+                let correctedCompass = telemetry.compassHeading;
+                if (window.innerWidth < window.innerHeight) {
+                    correctedCompass = (correctedCompass + 90) % 360;
+                }
+                if (telemetry.speed > 10 && telemetry.gpsHeading !== null) {
+                    telemetry.heading = telemetry.gpsHeading; telemetry.sensorType = "GPS TRACK";
+                } else {
+                    telemetry.heading = correctedCompass; telemetry.sensorType = "MAG HEADING";
+                }
+            }
+
+            if (dt > 0 && !isSimulating) {
                 let hdgDiff = telemetry.heading - telemetry.lastHeading;
                 if (hdgDiff > 180) hdgDiff -= 360; if (hdgDiff < -180) hdgDiff += 360;
                 telemetry.yawRate = (telemetry.yawRate * 0.8) + ((hdgDiff / dt) * 0.2); telemetry.lastHeading = telemetry.heading;
@@ -289,15 +316,15 @@
                 telemetry.radius = (omega > 0.01 && speedMS > 2) ? Math.round(speedMS / omega) : 0;
             }
 
-            // Yayını Yönet
-            handleLiveStreaming(now);
-            updateTimers();
+            handleLiveStreaming(now); updateTimers();
 
             telemetry.warnings = [];
-            if (telemetry.gpsStatus === "LOST" || telemetry.gpsStatus === "SEARCHING") telemetry.warnings.push("GPS LOST");
-            if (telemetry.gpsAccuracy > 15) telemetry.warnings.push("LOW ACCURACY");
-            if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
-            if (!isCalibrated) telemetry.warnings.push("CALIBRATION NEEDED");
+            if (!isSimulating) {
+                if (telemetry.gpsStatus === "LOST" || telemetry.gpsStatus === "SEARCHING") telemetry.warnings.push("GPS LOST");
+                if (telemetry.gpsAccuracy > 15) telemetry.warnings.push("LOW ACCURACY");
+                if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
+                if (!isCalibrated) telemetry.warnings.push("CALIBRATION NEEDED");
+            }
 
             ctx.clearRect(0, 0, w, h); ctx.save();
             let vW, vH; let isPortraitSimulated = false;
@@ -305,13 +332,10 @@
             if (w < h) { ctx.translate(w / 2, h / 2); ctx.rotate(Math.PI / 2); vW = h; vH = w; isPortraitSimulated = true; } 
             else { ctx.translate(w / 2, h / 2); vW = w; vH = h; }
 
-            telemetry.heading = (telemetry.speed > 10 && telemetry.gpsHeading !== null) ? telemetry.gpsHeading : telemetry.compassHeading;
-            telemetry.sensorType = (telemetry.speed > 10 && telemetry.gpsHeading !== null) ? "GPS TRACK" : "MAG HEADING";
-
             const compassRadius = isPortraitSimulated ? (vH * 0.26) : Math.min(vW, vH) * 0.35;
             let pitchPixelsPerDegree = isPortraitSimulated ? 4 : 5.5;
 
-            // --- 1. MODERN YAPAY UFUK ---
+            // --- 1. PITCH LADDER & HORIZON ---
             ctx.save(); ctx.rotate(-telemetry.roll * Math.PI / 180);
             let pitchShift = telemetry.pitch * pitchPixelsPerDegree;
             ctx.fillStyle = theme.bgSky; ctx.fillRect(-vW, -vH * 2 + pitchShift, vW * 2, vH * 2);
@@ -327,7 +351,7 @@
             }
             ctx.restore();
 
-            // --- 2. ÜST COMPASS RIBBON VE BANK SCALE ---
+            // --- 2. PUSULA COMPASS RIBBON & BANK SCALE ---
             ctx.save(); let ribbonY = -vH / 2 + (isPortraitSimulated ? 35 : 20);
             ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(-vW/3, ribbonY, (vW/3)*2, 22);
             ctx.strokeStyle = theme.main; ctx.strokeRect(-vW/3, ribbonY, (vW/3)*2, 22);
@@ -360,40 +384,44 @@
             });
             ctx.save(); ctx.translate(0, bankCenterY); ctx.rotate(telemetry.roll * Math.PI / 180); ctx.fillStyle = theme.main; ctx.beginPath(); ctx.moveTo(0, -bankRadius + 2); ctx.lineTo(-4, -bankRadius + 9); ctx.lineTo(4, -bankRadius + 9); ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore();
 
-            // --- 3. FIX VE FLIGHT PATH VECTOR ---
+            // --- 3. FLIGHT PATH VECTOR ---
             ctx.strokeStyle = theme.main; ctx.lineWidth = 2.5; ctx.beginPath();
             ctx.moveTo(-25, 0); ctx.lineTo(-10, 0); ctx.lineTo(-6, 5); ctx.moveTo(25, 0); ctx.lineTo(10, 0); ctx.lineTo(6, 5); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(0, -3); ctx.lineTo(0, 3); ctx.stroke();
-
             ctx.save(); ctx.translate(-telemetry.latG * 65, telemetry.lonG * 45); ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 2*Math.PI); ctx.moveTo(-7, 0); ctx.lineTo(-15, 0); ctx.moveTo(7, 0); ctx.lineTo(15, 0); ctx.moveTo(0, -7); ctx.lineTo(0, -12); ctx.stroke(); ctx.restore();
 
-            // --- 4. SOL SÜRAT BANDI & STOP DIST ---
-            const tapeW = 60; const tapeH = vH * 0.52; const leftTapeX = -vW / 2 + (isPortraitSimulated ? 42 : 55);
+            // SÖZ KONUSU YENİ KOORDİNAT TANIMLARI (SWAPPED)
+            const tapeW = 60; const tapeH = vH * 0.52; 
+            const leftTapeX = -vW / 2 + (isPortraitSimulated ? 42 : 55); // SOL KONUM
+            const rightTapeX = vW / 2 - tapeW - (isPortraitSimulated ? 42 : 55); // SAĞ KONUM
+
+            // --- 4. YENİ SOL PANEL: ALTIMETRE, VS VE EĞİM (ESKİDEN SAĞDAYDI) ---
             ctx.save(); ctx.beginPath(); ctx.rect(leftTapeX, -tapeH/2, tapeW, tapeH); ctx.clip(); ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(leftTapeX, -tapeH/2, tapeW, tapeH); ctx.strokeStyle = theme.main; ctx.strokeRect(leftTapeX, -tapeH/2, tapeW, tapeH);
-            ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
-            let startSpeed = Math.floor(telemetry.speed / 10) * 10 - 30;
-            for (let s = startSpeed; s <= startSpeed + 60; s += 10) { if (s < 0) continue; let sY = (telemetry.speed - s) * 3.5; ctx.beginPath(); ctx.moveTo(leftTapeX + tapeW, sY); ctx.lineTo(leftTapeX + tapeW - 6, sY); ctx.stroke(); ctx.fillText(s, leftTapeX + tapeW - 10, sY + 4); }
-            ctx.restore();
-            ctx.fillStyle = "black"; ctx.fillRect(leftTapeX - 5, -12, tapeW + 10, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(leftTapeX - 5, -12, tapeW + 10, 24);
-            ctx.fillStyle = theme.main; ctx.font = "bold 13px monospace"; ctx.textAlign = "left"; ctx.fillText(String(telemetry.speed).padStart(3,'0'), leftTapeX + 4, 5); ctx.font = "7px monospace"; ctx.fillText("KM/H", leftTapeX + 36, 4);
-
-            let barX = leftTapeX + tapeW + 8; ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.strokeRect(barX, -30, 8, 60);
-            if (telemetry.lonG < 0) { ctx.fillStyle = "#ff0000"; ctx.fillRect(barX, 0, 8, Math.min(Math.abs(telemetry.lonG) * 50, 30)); } 
-            else if (telemetry.lonG > 0) { ctx.fillStyle = "#00ff00"; ctx.fillRect(barX, -Math.min(telemetry.lonG * 50, 30), 8, Math.min(telemetry.lonG * 50, 30)); }
-            ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.fillText(`STOP EST: ${telemetry.speed > 3 ? Math.round((Math.pow(telemetry.speed/3.6,2))/(2*0.75*9.81)) : 0}M`, leftTapeX, tapeH/2 + 14);
-
-            // --- 5. SAĞ ALTIMETRE & VS ---
-            const rightTapeX = vW / 2 - tapeW - (isPortraitSimulated ? 42 : 55);
-            ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.clip(); ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.strokeStyle = theme.main; ctx.strokeRect(rightTapeX, -tapeH/2, tapeW, tapeH);
             ctx.fillStyle = theme.main; ctx.textAlign = "left"; ctx.font = "11px monospace";
             let startAlt = Math.floor(telemetry.altitude / 20) * 20 - 40;
-            for (let a = startAlt; a <= startAlt + 80; a += 20) { let aY = (telemetry.altitude - a) * 1.2; ctx.beginPath(); ctx.moveTo(rightTapeX, aY); ctx.lineTo(rightTapeX + 6, aY); ctx.stroke(); ctx.fillText(a, rightTapeX + 10, aY + 4); }
+            for (let a = startAlt; a <= startAlt + 80; a += 20) { let aY = (telemetry.altitude - a) * 1.2; ctx.beginPath(); ctx.moveTo(leftTapeX, aY); ctx.lineTo(leftTapeX + 6, aY); ctx.stroke(); ctx.fillText(a, leftTapeX + 10, aY + 4); }
+            ctx.restore();
+            ctx.fillStyle = "black"; ctx.fillRect(leftTapeX - 5, -12, tapeW + 10, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(leftTapeX - 5, -12, tapeW + 10, 24);
+            ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right"; ctx.fillText(telemetry.altitude + "M", leftTapeX + tapeW - 4, 5);
+
+            let vsiX = leftTapeX - 12; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
+            ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, Math.max(-25, Math.min(25, -telemetry.verticalSpeed * 5)), 3, 0, 2*Math.PI); ctx.fill();
+            ctx.font = "7px monospace"; ctx.textAlign = "right"; ctx.fillText(`${telemetry.verticalSpeed >= 0 ? '+' : ''}${telemetry.verticalSpeed.toFixed(1)}m/s`, vsiX - 8, 4);
+            ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left"; ctx.fillText(`GRADE: ${telemetry.roadGrade.toFixed(1)}%`, leftTapeX, tapeH/2 + 14);
+
+            // --- 5. YENİ SAĞ PANEL: SÜRAT ŞERİDİ & GAZ/FREN ANALİZİ (ESKİDEN SOLDAYDI) ---
+            ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.clip(); ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.strokeStyle = theme.main; ctx.strokeRect(rightTapeX, -tapeH/2, tapeW, tapeH);
+            ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
+            let startSpeed = Math.floor(telemetry.speed / 10) * 10 - 30;
+            for (let s = startSpeed; s <= startSpeed + 60; s += 10) { if (s < 0) continue; let sY = (telemetry.speed - s) * 3.5; ctx.beginPath(); ctx.moveTo(rightTapeX + tapeW, sY); ctx.lineTo(rightTapeX + tapeW - 6, sY); ctx.stroke(); ctx.fillText(s, rightTapeX + tapeW - 10, sY + 4); }
             ctx.restore();
             ctx.fillStyle = "black"; ctx.fillRect(rightTapeX - 5, -12, tapeW + 10, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(rightTapeX - 5, -12, tapeW + 10, 24);
-            ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right"; ctx.fillText(telemetry.altitude + "M", rightTapeX + tapeW - 4, 5);
+            ctx.fillStyle = theme.main; ctx.font = "bold 13px monospace"; ctx.textAlign = "left"; ctx.fillText(String(telemetry.speed).padStart(3,'0'), rightTapeX + 4, 5); ctx.font = "7px monospace"; ctx.fillText("KM/H", rightTapeX + 36, 4);
 
-            let vsiX = rightTapeX - 12; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
-            ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, Math.max(-25, Math.min(25, -telemetry.verticalSpeed * 5)), 3, 0, 2*Math.PI); ctx.fill();
-            ctx.font = "8px monospace"; ctx.textAlign = "right"; ctx.fillText(`GRADE: ${telemetry.roadGrade.toFixed(1)}%`, rightTapeX + tapeW, tapeH/2 + 14);
+            let barX = rightTapeX - 15; ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.strokeRect(barX, -30, 8, 60);
+            if (telemetry.lonG < 0) { ctx.fillStyle = "#ff0000"; ctx.fillRect(barX, 0, 8, Math.min(Math.abs(telemetry.lonG) * 50, 30)); } 
+            else if (telemetry.lonG > 0) { ctx.fillStyle = "#00ff00"; ctx.fillRect(barX, -Math.min(telemetry.lonG * 50, 30), 8, Math.min(telemetry.lonG * 50, 30)); }
+            ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "right";
+            ctx.fillText(`STOP EST: ${telemetry.speed > 3 ? Math.round((Math.pow(telemetry.speed/3.6,2))/(2*0.75*9.81)) : 0}M`, rightTapeX + tapeW, tapeH/2 + 14);
 
             // --- 6. PERFORMANCE BOX ---
             let pX = -vW / 2 + (isPortraitSimulated ? 42 : 55); let pY = vH / 2 - (isPortraitSimulated ? 95 : 110);
@@ -414,7 +442,7 @@
             ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(Math.max(gX - 22, Math.min(gX + 22, gX - (telemetry.latG * 20))), slipY + 3, 2.5, 0, 2*Math.PI); ctx.fill();
             ctx.textAlign = "center"; ctx.fillText(`R: ${telemetry.radius > 0 && telemetry.radius < 2000 ? telemetry.radius + 'm' : '---'}`, gX, slipY + 22); ctx.fillText(`YAW: ${Math.round(telemetry.yawRate)}°/s`, gX, slipY + 32);
 
-            // --- 8. SYSTEM STATUS & WARNINGS ---
+            // --- 8. SYSTEM STATUS & UYARILAR ---
             let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
             ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); ctx.fillText(`ACC : ±${telemetry.gpsAccuracy.toFixed(1)}M (${telemetry.gpsStatus})`, -vW/2 + 20, statusY + 11);
             ctx.textAlign = "right"; ctx.fillText(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 20, statusY); ctx.fillText(`STREAM : ${isStreaming ? 'ONLINE' : 'OFFLINE'}`, vW/2 - 20, statusY + 11);
