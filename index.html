@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Drift & Performance HUD Cockpit - Ultimate Safe Edition</title>
+    <title>Drift & Performance HUD Cockpit - Telemetry Pro Edition</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -66,7 +66,7 @@
         <button id="startBtn">SİSTEMLERİ BAŞLAT</button>
         <p style="color: #a4a4a4; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
             Pist ve Drift Telemetri Paketi Aktif.<br>
-            <span style="color: #00ff00;">iOS Kilitlenme Korumalı Senkron Altyapı Entegre Edildi.</span>
+            <span style="color: #00ff00;">Gelişmiş G-Kuvveti ve Slip İz Hafızası Entegre Edildi.</span>
         </p>
     </div>
 
@@ -112,6 +112,11 @@
             yawRate: 0, radius: 0, sensorType: "INIT", horizonQuality: "OK", warnings: []
         };
 
+        // Telemetri Geçmiş Hafızası (İz bırakma için diziler)
+        let gHistory = [];
+        let slipHistory = [];
+        const MAX_HISTORY_LENGTH = 45; // Yaklaşık 1-1.5 saniyelik kuyruk izi
+
         let offset = { pitch: 90, roll: 0, ax: 0, ay: 0, az: 0 };
         let isCalibrated = false; let lastGpsTime = null; let lastLat = null; let lastLon = null;
         let lastUpdateTime = Date.now();
@@ -136,7 +141,7 @@
                 simBtn.classList.add('sim-active'); simBtn.innerText = "SİMÜLASYON: AÇIK";
             } else {
                 simBtn.classList.remove('sim-active'); simBtn.innerText = "SİMÜLASYON: KAPALI";
-                telemetry.speed = 0; telemetry.latG = 0; telemetry.lonG = 0;
+                telemetry.speed = 0; telemetry.latG = 0; telemetry.lonG = 0; gHistory = []; slipHistory = [];
             }
         });
 
@@ -153,14 +158,12 @@
         }
         window.addEventListener('resize', resize); resize();
 
-        // KESİN DÜZELTME: async kelimesi fonksiyondan tamamen kaldırıldı. %100 Senkron akış sağlandı.
         startBtn.addEventListener('click', () => {
-            // Adım 1: UI Elemanlarını Anında Aç (Hiçbir koşul ve sensör cevabı beklenmez)
             overlay.style.display = 'none';
             timers.lapStart = Date.now();
             animate();
 
-            // Adım 2: GPS Altyapısını Başlat
+            // GPS Altyapısı Başlatma ve İzin Yönetimi
             try {
                 if (navigator.geolocation) {
                     navigator.geolocation.watchPosition((pos) => {
@@ -200,9 +203,14 @@
                         lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
                     }, (err) => { 
                         if(!isSimulating) {
-                            if (err.code === err.PERMISSION_DENIED) telemetry.gpsStatus = "PERM DENIED";
-                            else if (err.code === err.TIMEOUT) telemetry.gpsStatus = "TIMEOUT (INDOOR)";
-                            else telemetry.gpsStatus = "LOST";
+                            // KESİN DÜZELTME: Uygulama içi tarayıcılar (Instagram vb.) GPS'i otomatik engellediğinde HUD modunu koru.
+                            if (err.code === err.PERMISSION_DENIED) {
+                                telemetry.gpsStatus = "KONUM YOK (SENSOR MODU)";
+                            } else if (err.code === err.TIMEOUT) {
+                                telemetry.gpsStatus = "TIMEOUT (INDOOR)";
+                            } else {
+                                telemetry.gpsStatus = "LOST";
+                            }
                         }
                     }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
                 } else {
@@ -210,42 +218,25 @@
                 }
             } catch (geoErr) { console.log("GPS Başlatılamadı:", geoErr); }
 
-            // Adım 3: iOS Birleşik Sensör İzin Akışı (.then() zinciri ile, kilitsiz mimari)
+            // iOS Birleşik Sensör İzin Akışı
             try {
                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                    // iOS Cihazları için Master Hareket İzni İstemi (Yönelimi de kapsar)
                     DeviceMotionEvent.requestPermission()
                         .then((motionPerm) => {
                             if (motionPerm === 'granted') {
                                 window.addEventListener('deviceorientation', handleOrientation, true);
                                 window.addEventListener('devicemotion', handleMotion, true);
-                            } else {
-                                telemetry.gpsStatus = "SENSOR DENIED";
                             }
                         })
                         .catch((e) => {
-                            console.log('iOS İzin hatası bypass edildi:', e);
-                            // Koruma Amacıyla Doğrudan Bağlamayı Dene
                             window.addEventListener('deviceorientation', handleOrientation, true);
                             window.addEventListener('devicemotion', handleMotion, true);
                         });
-                } else if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // Alternatif iOS İzin Kanalı
-                    DeviceOrientationEvent.requestPermission()
-                        .then((orientPerm) => {
-                            if (orientPerm === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation, true);
-                                window.addEventListener('devicemotion', handleMotion, true);
-                            }
-                        })
-                        .catch((e) => console.log(e));
                 } else {
-                    // Android veya Masaüstü Cihazlar (İzin istemeden direkt bağla)
                     window.addEventListener('deviceorientation', handleOrientation, true);
                     window.addEventListener('devicemotion', handleMotion, true);
                 }
             } catch (e) {
-                console.log('Sensör katmanı hatası yutuldu, yedek hat devrede:', e);
                 window.addEventListener('deviceorientation', handleOrientation, true);
                 window.addEventListener('devicemotion', handleMotion, true);
             }
@@ -282,6 +273,7 @@
             if (isSimulating) return;
             offset.pitch = telemetry.rawPitch; offset.roll = telemetry.rawRoll;
             offset.ax = telemetry.lateralX || 0; offset.ay = telemetry.longitudinalY || 0; isCalibrated = true;
+            gHistory = []; slipHistory = [];
         });
 
         streamBtn.addEventListener('click', () => {
@@ -344,7 +336,7 @@
                 telemetry.pitch = 4 * Math.sin(simTime * 0.5);
                 telemetry.roll = 25 * Math.cos(simTime * 0.35); 
                 telemetry.lonG = 0.4 * Math.cos(simTime * 0.4);
-                telemetry.latG = -0.8 * Math.sin(simTime * 0.35); 
+                telemetry.latG = -0.9 * Math.sin(simTime * 0.35); 
                 telemetry.altitude = Math.round(150 + 15 * Math.sin(simTime * 0.1));
                 telemetry.verticalSpeed = 1 * Math.cos(simTime * 0.1);
                 telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
@@ -369,12 +361,18 @@
                 telemetry.radius = (omega > 0.01 && speedMS > 2) ? Math.round(speedMS / omega) : 0;
             }
 
+            // Hafıza Geçmişini Güncelleme (Trail Veri Ekleme)
+            gHistory.push({ latG: telemetry.latG, lonG: telemetry.lonG });
+            if (gHistory.length > MAX_HISTORY_LENGTH) gHistory.shift();
+
+            slipHistory.push({ latG: telemetry.latG });
+            if (slipHistory.length > MAX_HISTORY_LENGTH) slipHistory.shift();
+
             handleLiveStreaming(now); updateTimers();
 
             telemetry.warnings = [];
             if (!isSimulating) {
                 if (telemetry.gpsStatus.includes("LOST") || telemetry.gpsStatus.includes("TIMEOUT")) telemetry.warnings.push("GPS LOST / NO SATELLITE");
-                if (telemetry.gpsStatus.includes("DENIED")) telemetry.warnings.push("LOCATION PERMISSION DENIED");
                 if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
                 if (!isCalibrated) telemetry.warnings.push("CALIBRATION NEEDED");
             }
@@ -433,22 +431,56 @@
             ctx.beginPath(); ctx.moveTo(gX - gBallRadius, gY); ctx.lineTo(gX + gBallRadius, gY); ctx.moveTo(gX, gY - gBallRadius); ctx.lineTo(gX, gY + gBallRadius); ctx.stroke();
             ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "7px monospace"; ctx.textAlign = "center";
             ctx.fillText("0.5G", gX, gY - (gBallRadius*0.33) + 2); ctx.fillText("1.0G", gX, gY - (gBallRadius*0.66) + 2); ctx.fillText("1.5G", gX, gY - gBallRadius + 2);
+            
+            // GELİŞTİRME: G-Ball Kuyruk İzi Çizimi (Fading Trail)
+            ctx.save();
+            for (let i = 0; i < gHistory.length; i++) {
+                let h = gHistory[i];
+                let hX = gX - (h.latG * (gBallRadius / 1.5));
+                let hY = gY + (h.lonG * (gBallRadius / 1.5));
+                ctx.globalAlpha = (i / gHistory.length) * 0.45; // Eskiden yeniye doğru görünürlük artar
+                ctx.fillStyle = "#ff0055";
+                ctx.beginPath(); ctx.arc(hX, hY, 3, 0, 2*Math.PI); ctx.fill();
+            }
+            ctx.restore();
+
+            // Ana G Bilyesi
             let ballX = gX - (telemetry.latG * (gBallRadius / 1.5)); 
             let ballY = gY + (telemetry.lonG * (gBallRadius / 1.5));
             ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); ctx.stroke();
-            ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 5, 0, 2*Math.PI); ctx.fill();
+            ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 5.5, 0, 2*Math.PI); ctx.fill();
+            
             ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
             ctx.fillText(`LAT G: ${telemetry.latG.toFixed(2)}`, -gBallRadius - 10, gY + 4);
             ctx.textAlign = "left"; ctx.fillText(`LON G: ${telemetry.lonG.toFixed(2)}`, gBallRadius + 10, gY + 4);
 
-            // --- 4. SLIP / SKID INDICATOR ---
+            // --- 4. SLIP / SKID INDICATOR (GENİŞLETİLMİŞ VE İZLİ SÜRÜM) ---
             let slipY = gY + gBallRadius + 22;
+            let slipW = 180; // GELİŞTİRME: Bar genişliği 100px'den 180px'e çıkarıldı.
+            
             ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5;
-            ctx.strokeRect(gX - 50, slipY, 100, 7);
-            ctx.beginPath(); ctx.moveTo(gX - 16, slipY); ctx.lineTo(gX - 16, slipY + 7); ctx.moveTo(gX + 16, slipY); ctx.lineTo(gX + 16, slipY + 7); ctx.stroke(); 
-            let slipBallX = gX - (telemetry.latG * 40);
-            slipBallX = Math.max(gX - 46, Math.min(gX + 46, slipBallX));
-            ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(slipBallX, slipY + 3.5, 3, 0, 2*Math.PI); ctx.fill();
+            ctx.strokeRect(gX - slipW/2, slipY, slipW, 8);
+            ctx.beginPath(); 
+            ctx.moveTo(gX - slipW/4, slipY); ctx.lineTo(gX - slipW/4, slipY + 8); 
+            ctx.moveTo(gX + slipW/4, slipY); ctx.lineTo(gX + slipW/4, slipY + 8); 
+            ctx.stroke(); 
+
+            // GELİŞTİRME: Slip/Skid Kayma Bölgesi Kuyruk İzi Çizimi
+            ctx.save();
+            for (let i = 0; i < slipHistory.length; i++) {
+                let h = slipHistory[i];
+                let hBallX = gX - (h.latG * (slipW * 0.45)); // Genişliğe göre oranlandı
+                hBallX = Math.max(gX - (slipW/2 - 4), Math.min(gX + (slipW/2 - 4), hBallX));
+                ctx.globalAlpha = (i / slipHistory.length) * 0.40;
+                ctx.fillStyle = theme.main;
+                ctx.beginPath(); ctx.arc(hBallX, slipY + 4, 2, 0, 2*Math.PI); ctx.fill();
+            }
+            ctx.restore();
+
+            // Ana Kayma Bilyesi
+            let slipBallX = gX - (telemetry.latG * (slipW * 0.45));
+            slipBallX = Math.max(gX - (slipW/2 - 4), Math.min(gX + (slipW/2 - 4), slipBallX));
+            ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(slipBallX, slipY + 4, 3.5, 0, 2*Math.PI); ctx.fill();
             ctx.font = "bold 8px monospace"; ctx.textAlign = "center"; ctx.fillText("SLIP / SKID", gX, slipY - 4);
 
             // --- 5. YAW / RADIUS ---
@@ -501,7 +533,7 @@
             // --- 10. SYSTEM PARAMETRELERİ ---
             let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
             ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); 
-            ctx.fillText(`GPS : ${telemetry.gpsStatus} (±${telemetry.gpsAccuracy.toFixed(1)}M)`, -vW/2 + 20, statusY + 11);
+            ctx.fillText(`GPS : ${telemetry.gpsStatus}`, -vW/2 + 20, statusY + 11);
             ctx.textAlign = "right"; ctx.fillText(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 20, statusY); ctx.fillText(`STREAM : ${isStreaming ? 'ONLINE' : 'OFFLINE'}`, vW/2 - 20, statusY + 11);
             
             if (telemetry.warnings.length > 0) { ctx.fillStyle = "#ff3333"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; telemetry.warnings.forEach((warn, idx) => { ctx.fillText(`▶ ${warn} ◀`, 0, -vH/4 + (idx * 13)); }); }
