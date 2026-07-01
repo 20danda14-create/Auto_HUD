@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Advanced Glass Cockpit HUD - Swapped & Calibrated</title>
+    <title>Advanced Glass Cockpit HUD - Diagnostic Ready</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -17,7 +17,6 @@
         }
         #canvas { display: block; width: 100%; height: 100%; }
         
-        /* Başlat Butonu Görünürlük ve Tasarım Tamiri */
         #overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -51,16 +50,23 @@
             background: rgba(255, 165, 0, 0.25) !important;
             border-color: #ffa500 !important; color: #ffa500 !important;
         }
+        #httpsWarning {
+            display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            background: red; color: white; padding: 6px 15px; font-weight: bold; font-size: 0.8rem;
+            border-radius: 4px; z-index: 110; text-align: center; box-shadow: 0 0 15px red;
+        }
         @keyframes blink { 50% { opacity: 0.6; } }
     </style>
 </head>
 <body>
 
+    <div id="httpsWarning">⚠️ KRİTİK HATA: HTTPS ZORUNLUDUR! Sensörler bu bağlantıda çalışmaz.</div>
+
     <div id="overlay">
         <button id="startBtn">SİSTEMLERİ BAŞLAT</button>
-        <p style="color: #666; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
-            iPhone 14 Plus Donanım ve Aks Sapma Düzeltmesi Aktif.<br>
-            Lütfen Konum ve Jiroskop İzinlerini Onaylayın.
+        <p style="color: #a4a4a4; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
+            iPhone Donanım ve Aks Sapma Düzeltmesi Aktif.<br>
+            <span style="color: #ffa500;">Lütfen açılışta Konum ve Kamera/Hareket izinlerini onaylayın.</span>
         </p>
     </div>
 
@@ -75,10 +81,12 @@
     <canvas id="canvas"></canvas>
 
     <script>
-        // ==========================================
-        // ADIM 2'DE KOPYALADIĞIN WEB APP URL'SİNİ BURAYA YAPIŞTIRABİLİRSİN:
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/1IzqoYHpdwrAy7So37lOgWq3yUMR3w7EC6oeO0TbT4_s/exec";
-        // ==========================================
+
+        // GÜVENLİK KONTROLÜ: HTTPS değilse kullanıcıyı uyar
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            document.getElementById('httpsWarning').style.display = 'block';
+        }
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -123,7 +131,6 @@
         setHUDColor(currentThemeIdx);
         themeBtn.addEventListener('click', () => { currentThemeIdx = (currentThemeIdx + 1) % THEMES.length; setHUDColor(currentThemeIdx); });
 
-        // Simülasyon Modu Aç/Kapa Tetikleyicisi
         simBtn.addEventListener('click', () => {
             isSimulating = !isSimulating;
             if(isSimulating) {
@@ -148,6 +155,7 @@
         window.addEventListener('resize', resize); resize();
 
         startBtn.addEventListener('click', async () => {
+            // Geolocation Başlatma ve Hata Teşhisi
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition((pos) => {
                     if (isSimulating) return;
@@ -184,14 +192,28 @@
                         telemetry.altitude = Math.round(currentAlt);
                     }
                     lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
-                }, (err) => { if(!isSimulating) telemetry.gpsStatus = "LOST"; }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+                }, (err) => { 
+                    if(!isSimulating) {
+                        if (err.code === err.PERMISSION_DENIED) telemetry.gpsStatus = "PERM DENIED";
+                        else if (err.code === err.TIMEOUT) telemetry.gpsStatus = "TIMEOUT (INDOOR)";
+                        else telemetry.gpsStatus = "LOST";
+                    }
+                }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+            } else {
+                telemetry.gpsStatus = "NOT SUPPORTED";
             }
 
+            // Jiroskop ve Donanımsal Pusula İzin İstekleri (iOS için kritik)
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
-                    await DeviceOrientationEvent.requestPermission(); await DeviceMotionEvent.requestPermission();
-                    window.addEventListener('deviceorientation', handleOrientation); window.addEventListener('devicemotion', handleMotion);
-                } catch (e) { alert('Sensör reddedildi.'); }
+                    const orientPerm = await DeviceOrientationEvent.requestPermission(); 
+                    const motionPerm = await DeviceMotionEvent.requestPermission();
+                    if(orientPerm === 'granted' && motionPerm === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation); window.addEventListener('devicemotion', handleMotion);
+                    } else {
+                        alert('Sensör izinleri reddedildi. Lütfen Safari ayarlarından izin verin.');
+                    }
+                } catch (e) { console.log('Sensör API hatası:', e); }
             } else {
                 window.addEventListener('deviceorientation', handleOrientation); window.addEventListener('devicemotion', handleMotion);
             }
@@ -207,8 +229,11 @@
             telemetry.pitch = (telemetry.pitch * (1 - filterFactor)) + (relativePitch * filterFactor);
             telemetry.roll = (telemetry.roll * (1 - filterFactor)) + (relativeRoll * filterFactor);
             
-            if (event.webkitCompassHeading) telemetry.compassHeading = event.webkitCompassHeading;
-            else if (event.alpha) telemetry.compassHeading = 360 - event.alpha;
+            if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
+                telemetry.compassHeading = event.webkitCompassHeading;
+            } else if (event.alpha !== null) {
+                telemetry.compassHeading = 360 - event.alpha;
+            }
             telemetry.horizonQuality = (Math.abs(telemetry.pitch) > 45 || Math.abs(telemetry.roll) > 50) ? "DEGRADED" : "OK";
         }
 
@@ -229,7 +254,6 @@
         });
 
         streamBtn.addEventListener('click', () => {
-            if(GOOGLE_SCRIPT_URL.includes("BURAYA")) { alert("Lütfen kodun içindeki URL alanını güncelleyin!"); return; }
             isStreaming = !isStreaming;
             if (isStreaming) {
                 streamBuffer = []; lastSendTime = Date.now();
@@ -282,7 +306,6 @@
             const w = window.innerWidth; const h = window.innerHeight; const theme = THEMES[currentThemeIdx];
             let now = Date.now(); let dt = (now - lastUpdateTime) / 1000; lastUpdateTime = now;
 
-            // --- PUSULA VE SENSÖR HESAPLAMA DOĞRULTMA ALANI ---
             if (isSimulating) {
                 let simTime = now / 1000;
                 telemetry.speed = Math.round(75 + 45 * Math.sin(simTime * 0.4));
@@ -296,12 +319,14 @@
                 telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
                 telemetry.gpsStatus = "GOOD"; telemetry.gpsAccuracy = 1.1; telemetry.heading = telemetry.compassHeading; telemetry.sensorType = "SIMULATION";
             } else {
-                // Kritik Pusula Düzeltmesi: Ekran dikey kilitliyken yana monte edilirse eksen kaymasını +90 derece ile tamir et
+                // iPhone dikey kilitliyken yan monte edilme +90 kompanse mekanizması
                 let correctedCompass = telemetry.compassHeading;
                 if (window.innerWidth < window.innerHeight) {
                     correctedCompass = (correctedCompass + 90) % 360;
                 }
-                if (telemetry.speed > 10 && telemetry.gpsHeading !== null) {
+                
+                // İYİLEŞTİRME: GPS uydusu çekmese bile donanımsal pusula (Manyetometre) her zaman pusula şeridini döndürsün
+                if (telemetry.speed > 12 && telemetry.gpsHeading !== null) {
                     telemetry.heading = telemetry.gpsHeading; telemetry.sensorType = "GPS TRACK";
                 } else {
                     telemetry.heading = correctedCompass; telemetry.sensorType = "MAG HEADING";
@@ -320,7 +345,8 @@
 
             telemetry.warnings = [];
             if (!isSimulating) {
-                if (telemetry.gpsStatus === "LOST" || telemetry.gpsStatus === "SEARCHING") telemetry.warnings.push("GPS LOST");
+                if (telemetry.gpsStatus.includes("LOST") || telemetry.gpsStatus.includes("TIMEOUT")) telemetry.warnings.push("GPS LOST / NO SATELLITE");
+                if (telemetry.gpsStatus.includes("DENIED")) telemetry.warnings.push("LOCATION PERMISSION DENIED");
                 if (telemetry.gpsAccuracy > 15) telemetry.warnings.push("LOW ACCURACY");
                 if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
                 if (!isCalibrated) telemetry.warnings.push("CALIBRATION NEEDED");
@@ -379,7 +405,7 @@
                 let bRad = (bAngle - 90) * Math.PI / 180;
                 let bx1 = Math.cos(bRad) * bankRadius; let by1 = Math.sin(bRad) * bankRadius + bankCenterY;
                 let bx2 = Math.cos(bRad) * (bankRadius - 6); let by2 = Math.sin(bRad) * (bankRadius - 6) + bankCenterY;
-                ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(bx1, by1); ctx.lineTo(bx2, by2); ctx.stroke();
+                ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(bx1, by1); ctx.lineTo(bx2, by2); stroke();
                 if (bAngle % 10 === 0) { let bLx = Math.cos(bRad) * (bankRadius - 14); let bLy = Math.sin(bRad) * (bankRadius - 14) + bankCenterY; ctx.fillText(Math.abs(bAngle), bLx, bLy + 3); }
             });
             ctx.save(); ctx.translate(0, bankCenterY); ctx.rotate(telemetry.roll * Math.PI / 180); ctx.fillStyle = theme.main; ctx.beginPath(); ctx.moveTo(0, -bankRadius + 2); ctx.lineTo(-4, -bankRadius + 9); ctx.lineTo(4, -bankRadius + 9); ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore();
@@ -389,12 +415,11 @@
             ctx.moveTo(-25, 0); ctx.lineTo(-10, 0); ctx.lineTo(-6, 5); ctx.moveTo(25, 0); ctx.lineTo(10, 0); ctx.lineTo(6, 5); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(0, -3); ctx.lineTo(0, 3); ctx.stroke();
             ctx.save(); ctx.translate(-telemetry.latG * 65, telemetry.lonG * 45); ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 2*Math.PI); ctx.moveTo(-7, 0); ctx.lineTo(-15, 0); ctx.moveTo(7, 0); ctx.lineTo(15, 0); ctx.moveTo(0, -7); ctx.lineTo(0, -12); ctx.stroke(); ctx.restore();
 
-            // SÖZ KONUSU YENİ KOORDİNAT TANIMLARI (SWAPPED)
             const tapeW = 60; const tapeH = vH * 0.52; 
-            const leftTapeX = -vW / 2 + (isPortraitSimulated ? 42 : 55); // SOL KONUM
-            const rightTapeX = vW / 2 - tapeW - (isPortraitSimulated ? 42 : 55); // SAĞ KONUM
+            const leftTapeX = -vW / 2 + (isPortraitSimulated ? 42 : 55);
+            const rightTapeX = vW / 2 - tapeW - (isPortraitSimulated ? 42 : 55);
 
-            // --- 4. YENİ SOL PANEL: ALTIMETRE, VS VE EĞİM (ESKİDEN SAĞDAYDI) ---
+            // --- 4. SOL PANEL: ALTIMETRE, VS VE EĞİM ---
             ctx.save(); ctx.beginPath(); ctx.rect(leftTapeX, -tapeH/2, tapeW, tapeH); ctx.clip(); ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(leftTapeX, -tapeH/2, tapeW, tapeH); ctx.strokeStyle = theme.main; ctx.strokeRect(leftTapeX, -tapeH/2, tapeW, tapeH);
             ctx.fillStyle = theme.main; ctx.textAlign = "left"; ctx.font = "11px monospace";
             let startAlt = Math.floor(telemetry.altitude / 20) * 20 - 40;
@@ -408,7 +433,7 @@
             ctx.font = "7px monospace"; ctx.textAlign = "right"; ctx.fillText(`${telemetry.verticalSpeed >= 0 ? '+' : ''}${telemetry.verticalSpeed.toFixed(1)}m/s`, vsiX - 8, 4);
             ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left"; ctx.fillText(`GRADE: ${telemetry.roadGrade.toFixed(1)}%`, leftTapeX, tapeH/2 + 14);
 
-            // --- 5. YENİ SAĞ PANEL: SÜRAT ŞERİDİ & GAZ/FREN ANALİZİ (ESKİDEN SOLDAYDI) ---
+            // --- 5. SAĞ PANEL: SÜRAT ŞERİDİ & GAZ/FREN ---
             ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.clip(); ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(rightTapeX, -tapeH/2, tapeW, tapeH); ctx.strokeStyle = theme.main; ctx.strokeRect(rightTapeX, -tapeH/2, tapeW, tapeH);
             ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
             let startSpeed = Math.floor(telemetry.speed / 10) * 10 - 30;
@@ -431,7 +456,7 @@
             ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.moveTo(pX, pY+39); ctx.lineTo(pX+150, pY+39); ctx.stroke();
             ctx.fillStyle = "#00ffff"; ctx.fillText(`CUR LAP: ${formatLapTime((Date.now() - timers.lapStart)/1000)}`, pX + 6, pY + 50); ctx.fillText(`BEST   : ${formatLapTime(timers.bestLap)}`, pX + 6, pY + 61);
 
-            // --- 7. TRACTION CIRCLE & SLIP INDICATOR ---
+            // --- 7. TRACTION CIRCLE ---
             let gBallRadius = 30; let gX = vW / 2 - gBallRadius - (isPortraitSimulated ? 45 : 60); let gY = vH / 2 - gBallRadius - (isPortraitSimulated ? 75 : 95);
             ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(gX, gY, gBallRadius, 0, 2*Math.PI); ctx.stroke(); ctx.beginPath(); ctx.arc(gX, gY, gBallRadius/2, 0, 2*Math.PI); ctx.stroke(); ctx.beginPath(); ctx.moveTo(gX - gBallRadius, gY); ctx.lineTo(gX + gBallRadius, gY); ctx.stroke(); ctx.beginPath(); ctx.moveTo(gX, gY - gBallRadius); ctx.lineTo(gX, gY + gBallRadius); ctx.stroke();
             let ballX = gX - (telemetry.latG * gBallRadius); let ballY = gY + (telemetry.lonG * gBallRadius);
@@ -442,11 +467,14 @@
             ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(Math.max(gX - 22, Math.min(gX + 22, gX - (telemetry.latG * 20))), slipY + 3, 2.5, 0, 2*Math.PI); ctx.fill();
             ctx.textAlign = "center"; ctx.fillText(`R: ${telemetry.radius > 0 && telemetry.radius < 2000 ? telemetry.radius + 'm' : '---'}`, gX, slipY + 22); ctx.fillText(`YAW: ${Math.round(telemetry.yawRate)}°/s`, gX, slipY + 32);
 
-            // --- 8. SYSTEM STATUS & UYARILAR ---
+            // --- 8. SYSTEM STATUS & DIAGNOSTICS ---
             let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
-            ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); ctx.fillText(`ACC : ±${telemetry.gpsAccuracy.toFixed(1)}M (${telemetry.gpsStatus})`, -vW/2 + 20, statusY + 11);
+            ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); 
+            ctx.fillText(`GPS : ${telemetry.gpsStatus} (±${telemetry.gpsAccuracy.toFixed(1)}M)`, -vW/2 + 20, statusY + 11);
             ctx.textAlign = "right"; ctx.fillText(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 20, statusY); ctx.fillText(`STREAM : ${isStreaming ? 'ONLINE' : 'OFFLINE'}`, vW/2 - 20, statusY + 11);
-            if (telemetry.warnings.length > 0) { ctx.fillStyle = "#ff0000"; ctx.font = "bold 11px monospace"; ctx.textAlign = "center"; telemetry.warnings.forEach((warn, idx) => { ctx.fillText(`▶ ${warn} ◀`, 0, -vH/4 + (idx * 15)); }); }
+            
+            // Teşhis ve Hata Ekranı
+            if (telemetry.warnings.length > 0) { ctx.fillStyle = "#ff3333"; ctx.font = "bold 11px monospace"; ctx.textAlign = "center"; telemetry.warnings.forEach((warn, idx) => { ctx.fillText(`▶ ${warn} ◀`, 0, -vH/4 + (idx * 15)); }); }
 
             ctx.restore(); requestAnimationFrame(animate);
         }
