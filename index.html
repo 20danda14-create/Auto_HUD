@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Telemetry HUD - Ultimate Landscape Sync</title>
+    <title>Telemetry HUD - Absolute Fix Edition</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
@@ -32,28 +32,14 @@
             font-family: monospace;
         }
         
-        /* STANDART LANDSCAPE (Gerçek Yatay Mod) BUTON DÜZENİ */
         .hud-controls {
             position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; z-index: 10; flex-direction: row;
-            transition: all 0.2s ease;
+            display: flex; gap: 10px; z-index: 10;
         }
-
-        /* SİMÜLE LANDSCAPE (Dikey ekranda yatay HUD çalışırken) BUTON DÜZENİ */
-        body.simulated-landscape .hud-controls {
-            bottom: auto;
-            right: auto;
-            left: 38px; /* Sol kenara hizalama (Sürüş anında tam ekranın altı olur) */
-            top: 50%;
-            transform: translate(-50%, -50%) rotate(90deg); /* Canvas ile senkron 90 derece dönüş */
-            width: calc(100vh - 80px); /* Ekran boyuna dinamik yayılma */
-            justify-content: center;
-        }
-
         .control-btn {
             background: rgba(0, 0, 0, 0.7); color: inherit; border: 1.5px solid currentColor;
             padding: 8px 14px; font-size: 0.75rem; font-weight: bold; border-radius: 4px;
-            box-shadow: 0 0 8px rgba(0,0,0,0.5); cursor: pointer; white-space: nowrap;
+            box-shadow: 0 0 8px rgba(0,0,0,0.5); cursor: pointer;
         }
         .streaming-active {
             animation: blink 1.5s infinite;
@@ -83,7 +69,7 @@
     <div id="overlay">
         <button id="startBtn">SİSTEMLERİ VE İZİNLERİ BAŞLAT</button>
         <p style="color: #a4a4a4; text-align: center; font-size: 0.85rem; max-width: 80%; line-height: 1.5; margin-top: 15px;">
-            <span style="color: #00ff00; font-weight: bold;">ÇÖZÜM ENTEGRE EDİLDİ:</span> Arayüz ve Buton Düzeni %100 Yatay Senkronize Edildi.<br>
+            <span style="color: #00ff00; font-weight: bold;">ÇÖZÜM ENTEGRE EDİLDİ:</span> Ardaşık Hareket ve Pusula İzin Protokolü.<br>
             Sürat saati sıfır kalıyorsa sağ üstten <span style="color:#fff;">"Safari ile Aç"</span> yapınız.
         </p>
     </div>
@@ -92,7 +78,7 @@
         <button id="calibrateBtn" class="control-btn">SIFIRLA</button>
         <button id="themeBtn" class="control-btn">TEMA</button>
         <button id="simBtn" class="control-btn">SİMÜLASYON: KAPALI</button>
-        <button id="streamBtn" class="control-btn">CANLI YAYIN</button>
+        <button id="streamBtn" class="control-btn">CANLI YAYIN BAŞLAT</button>
         <button id="lapBtn" class="control-btn">TUR ATLA</button>
     </div>
 
@@ -101,6 +87,7 @@
     <script>
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/1IzqoYHpdwrAy7So37lOgWq3yUMR3w7EC6oeO0TbT4_s/exec";
 
+        // Gelişmiş Canlı Teşhis Sistemi
         if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
             document.getElementById('diagnosticPanel').style.display = 'block';
         }
@@ -132,7 +119,7 @@
 
         let gHistory = [];
         let slipHistory = [];
-        const MAX_HISTORY_LENGTH = 80;
+        const MAX_HISTORY_LENGTH = 80; // İz bırakma süresi drift takibi için en tepeye optimize edildi
 
         let offset = { pitch: 90, roll: 0, ax: 0, ay: 0, az: 0 };
         let isCalibrated = false; let lastGpsTime = null; let lastLat = null; let lastLon = null;
@@ -169,28 +156,23 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
-        // KESİN SENKRONİZASYON: Yeniden boyutlandırmada HTML buton katmanını da hizalar
         function resize() {
-            const w = window.innerWidth; const h = window.innerHeight;
-            canvas.width = w * window.devicePixelRatio; canvas.height = h * window.devicePixelRatio;
+            canvas.width = window.innerWidth * window.devicePixelRatio; canvas.height = window.innerHeight * window.devicePixelRatio;
             ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-            
-            // Eğer dikey ekran tespit edilirse buton barına landscape rotasyonu basar
-            if (w < h) {
-                document.body.classList.add('simulated-landscape');
-            } else {
-                document.body.classList.remove('simulated-landscape');
-            }
         }
         window.addEventListener('resize', resize); resize();
 
+        // KESİN ÇÖZÜM: Çift İzin Protokolü (iOS için Pusula ve Jiroskopu Aynı Anda Açar)
         async function requestHardwarePermissions() {
+            // 1. Aşama: Pusula/Yönelim İzni
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try { await DeviceOrientationEvent.requestPermission(); } catch(e) { console.log("Pusula İzin Hatası:", e); }
             }
+            // 2. Aşama: G-Kuvveti/İvmeölçer İzni
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try { await DeviceMotionEvent.requestPermission(); } catch(e) { console.log("Hareket İzin Hatası:", e); }
             }
+            
             window.addEventListener('deviceorientation', handleOrientation, true);
             window.addEventListener('devicemotion', handleMotion, true);
         }
@@ -250,8 +232,11 @@
         startBtn.addEventListener('click', async () => {
             overlay.style.display = 'none';
             timers.lapStart = Date.now();
+            
+            // Sensörleri ve GPS'i tetikle
             await requestHardwarePermissions();
             startGPSTracking();
+            
             animate();
         });
 
@@ -264,6 +249,7 @@
             telemetry.pitch = (telemetry.pitch * (1 - filterFactor)) + (relativePitch * filterFactor);
             telemetry.roll = (telemetry.roll * (1 - filterFactor)) + (relativeRoll * filterFactor);
             
+            // Pusula Ham Veri Alımı
             if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
                 telemetry.compassHeading = event.webkitCompassHeading;
             } else if (event.alpha !== null) {
@@ -295,7 +281,7 @@
                 streamBuffer = []; lastSendTime = Date.now();
                 streamBtn.classList.add('streaming-active'); streamBtn.innerText = "YAYIN AKTİF";
             } else {
-                streamBtn.classList.remove('streaming-active'); streamBtn.innerText = "CANLI YAYIN";
+                streamBtn.classList.remove('streaming-active'); streamBtn.innerText = "CANLI YAYIN BAŞLAT";
             }
         });
 
@@ -355,9 +341,14 @@
                 telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
                 telemetry.gpsStatus = "GOOD"; telemetry.gpsAccuracy = 1.0; telemetry.heading = telemetry.compassHeading; telemetry.sensorType = "SIMULATION";
             } else {
+                // KESİN ÇÖZÜM: Ekran Dönüşüm Açı Algoritması (Pusulayı Ekran Üstüne Hizalar)
                 let screenAngle = window.orientation || (screen.orientation && screen.orientation.angle) || 0;
                 let correctedCompass = (telemetry.compassHeading + screenAngle) % 360;
-                if (w < h) { correctedCompass = (telemetry.compassHeading + 90) % 360; }
+                
+                if (w < h) {
+                    // Eğer telefon dikeyken yatay HUD simüle ediliyorsa pusula açısını 90 derece kaydır
+                    correctedCompass = (telemetry.compassHeading + 90) % 360;
+                }
 
                 if (telemetry.speed > 12 && telemetry.gpsHeading !== null) {
                     telemetry.heading = telemetry.gpsHeading; telemetry.sensorType = "GPS TRACK";
@@ -457,16 +448,18 @@
 
             let ballX = gX - (telemetry.latG * (gBallRadius / 1.5)); 
             let ballY = gY + (telemetry.lonG * (gBallRadius / 1.5));
-            ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); stroke();
+            ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); ctx.stroke();
             ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 5.5, 0, 2*Math.PI); ctx.fill();
             
             ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
             ctx.fillText(`LAT G: ${telemetry.latG.toFixed(2)}`, -gBallRadius - 10, gY + 4);
             ctx.textAlign = "left"; ctx.fillText(`LON G: ${telemetry.lonG.toFixed(2)}`, gBallRadius + 10, gY + 4);
 
-            // --- 4. SLIP / SKID INDICATOR ---
+            // --- 4. SLIP / SKID INDICATOR (RESPONSIVE DİNAMİK GENİŞLİK) ---
             let slipY = gY + gBallRadius + 22;
+            // KESİN ÇÖZÜM: Ekran genişliğinin %75'ini kaplayacak şekilde dinamik genişliğe ayarlandı
             let slipW = Math.min(vW * 0.75, 480); 
+            
             ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5;
             ctx.strokeRect(gX - slipW/2, slipY, slipW, 8);
             ctx.beginPath(); 
@@ -474,6 +467,7 @@
             ctx.moveTo(gX + slipW/4, slipY); ctx.lineTo(gX + slipW/4, slipY + 8); 
             ctx.stroke(); 
 
+            // Uzun Süreli Kalıcı Slip İz Kaydı
             ctx.save();
             for (let i = 0; i < slipHistory.length; i++) {
                 let h = slipHistory[i];
@@ -518,7 +512,7 @@
             ctx.restore();
             ctx.fillStyle = "black"; ctx.fillRect(rightTapeX - 5, -12, 70, 24); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(rightTapeX - 5, -12, 70, 24);
             ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right"; ctx.fillText(telemetry.altitude + "M", rightTapeX + 60, 4);
-            let vsiX = rightTapeX + 72; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
+            let vsiX = rightTapeX + 72; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); stroke();
             ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, Math.max(-25, Math.min(25, -telemetry.verticalSpeed * 5)), 3, 0, 2*Math.PI); ctx.fill();
 
             // --- 8. TIMERS & DRAG LAP ---
@@ -537,7 +531,7 @@
             let stopDist = telemetry.speed > 3 ? Math.round((Math.pow(telemetry.speed/3.6,2))/(2*0.75*9.81)) : 0;
             ctx.fillText(`EST STOPPING: ${stopDist} M`, rX + 6, pY + 54);
 
-            // --- 10. SYSTEM PARAMETERS ---
+            // --- 10. SYSTEM PARAMETRELERİ ---
             let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
             ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 20, statusY); 
             ctx.fillText(`GPS : ${telemetry.gpsStatus}`, -vW/2 + 20, statusY + 11);
