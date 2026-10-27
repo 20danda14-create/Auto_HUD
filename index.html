@@ -3,566 +3,1066 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Telemetry HUD - Fixed Ultra Sync</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <title>Telemetry HUD</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
-        
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+
+        html, body { height: 100%; background: #000; overscroll-behavior: none; }
         body {
             background-color: #000000;
             font-family: 'Courier New', Courier, monospace;
             overflow: hidden;
-            width: 100vw;
-            height: 100vh;
             color: var(--hud-color, #00ff00);
-            position: relative;
+            position: fixed; inset: 0;
         }
 
-        /* Çizim alanını ekran piksellerine %100 sabitledik, kayma ve daralma yapamaz */
-        #canvas { 
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            display: block; 
-            z-index: 1;
-        }
-        
+        #canvas { position: fixed; top: 0; left: 0; display: block; z-index: 1; }
+
         #overlay {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            position: fixed; inset: 0;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
-            background: rgba(0,0,0,0.95); z-index: 100;
+            background: rgba(0,0,0,0.96); z-index: 100; padding: 16px; gap: 14px;
         }
-        
-        #startBtn {
-            background: #00ff00 !important;
-            color: #000000 !important;
-            border: none; padding: 18px 36px;
-            font-size: 1.3rem; font-weight: bold;
-            cursor: pointer; border-radius: 8px;
-            box-shadow: 0 0 30px #00ff00;
-            font-family: monospace;
+        #overlay p { color: #00ff00; text-align: center; font-size: 0.85rem; max-width: 520px; line-height: 1.55; font-weight: bold; }
+        #overlay p.sub { color: #ffa500; font-weight: normal; font-size: 0.78rem; }
+        .big-btn {
+            border: none; padding: 16px 30px; font-size: 1.1rem; font-weight: bold;
+            cursor: pointer; border-radius: 8px; font-family: monospace;
         }
-        
-        /* STANDART LANDSCAPE (Gerçek Yatay Mod) BUTON DÜZENİ */
-        .hud-controls {
-            position: fixed; bottom: calc(20px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
-            display: flex; gap: 12px; z-index: 10; flex-direction: row;
-        }
+        #startBtn { background: #00ff00; color: #000; box-shadow: 0 0 26px #00ff00; }
+        #demoBtn  { background: transparent; color: #ffa500; border: 1.5px solid #ffa500; padding: 10px 22px; font-size: 0.85rem; }
 
-        /* SİMÜLE LANDSCAPE (Dikey ekranda yatay HUD çalışırken) BUTON DÜZENİ */
+        .hud-controls {
+            position: fixed; bottom: calc(14px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+            display: flex; gap: 8px; z-index: 10; flex-direction: row; flex-wrap: nowrap;
+        }
         body.simulated-landscape .hud-controls {
-            bottom: auto;
-            right: auto;
-            left: calc(40px + env(safe-area-inset-left));
+            bottom: auto; right: auto;
+            left: calc(34px + env(safe-area-inset-left));
             top: 50%;
             transform: translate(-50%, -50%) rotate(90deg);
-            width: calc(100vh - 80px);
+            width: calc(100vh - 60px);
             justify-content: center;
         }
-
         .control-btn {
             background: rgba(0, 0, 0, 0.8); color: inherit; border: 1.5px solid currentColor;
-            padding: 10px 16px; font-size: 0.8rem; font-weight: bold; border-radius: 4px;
-            cursor: pointer; white-space: nowrap;
+            padding: 9px 11px; font-size: 0.72rem; font-weight: bold; border-radius: 4px;
+            cursor: pointer; white-space: nowrap; font-family: inherit;
         }
-        .streaming-active {
-            animation: blink 1.5s infinite;
-            background: rgba(0, 150, 255, 0.25) !important;
-            border-color: #0096ff !important; color: #0096ff !important;
-        }
-        .sim-active {
-            background: rgba(255, 165, 0, 0.25) !important;
-            border-color: #ffa500 !important; color: #ffa500 !important;
-        }
+        .streaming-active { animation: blink 1.5s infinite; background: rgba(0,150,255,0.25) !important; border-color: #0096ff !important; color: #0096ff !important; }
+        .sim-active { background: rgba(255,165,0,0.25) !important; border-color: #ffa500 !important; color: #ffa500 !important; }
+        .on-active { background: rgba(255,255,255,0.18) !important; }
+
         #diagnosticPanel {
-            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-            background: rgba(255, 0, 0, 0.9); color: white; padding: 10px 20px; 
-            font-weight: bold; font-size: 0.85rem; border-radius: 6px; z-index: 110; 
-            text-align: center; box-shadow: 0 0 20px red; display: none; line-height: 1.4; width: 90%;
+            position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+            background: rgba(255,0,0,0.92); color: #fff; padding: 9px 16px;
+            font-weight: bold; font-size: 0.8rem; border-radius: 6px; z-index: 110;
+            text-align: center; box-shadow: 0 0 20px red; display: none; line-height: 1.4; width: 90%; max-width: 640px;
         }
         @keyframes blink { 50% { opacity: 0.6; } }
     </style>
 </head>
 <body>
 
-    <div id="diagnosticPanel">
-        ⚠️ BAĞLANTI GÜVENLİ DEĞİL (HTTPS ZORUNLUDUR)<br>
-        <span style="font-size:0.75rem; font-weight:normal;">Sürat saati (GPS) verileri HTTP üzerinden iOS tarafından engellenir. Lütfen HTTPS protokolüyle açın!</span>
-    </div>
+    <div id="diagnosticPanel"></div>
 
     <div id="overlay">
-        <button id="startBtn">SİSTEMLERİ VE SİMÜLASYONU BAŞLAT</button>
-        <p style="color: #00ff00; text-align: center; font-size: 0.9rem; max-width: 80%; line-height: 1.6; margin-top: 20px; font-weight: bold;">
-            GÖSTERGELER ÇENTİK ALTINDAN KURTARILDI VE GÜVENLİ ALANA ÇEKİLDİ.<br>
-            <span style="color:#ffa500;">Açılışta Boş Kalmaması İçin Canlı Simülasyon Otomatik Aktif Edildi!</span>
+        <button id="startBtn" class="big-btn">SİSTEMLERİ BAŞLAT (GERÇEK VERİ)</button>
+        <p>
+            1) Telefonu aracta sabitleyin (cam yansıtma için ekran yukarı, dikey veya yatay fark etmez).<br>
+            2) Konum ve "Hareket ve Yön" izinlerini verin.<br>
+            3) Düz zeminde dururken SIFIRLA'ya basın. İlk dakikalarda hızlanıp fren/viraj yapınca telefonun araç eksenleri GPS ile otomatik öğrenilir.
         </p>
+        <p class="sub">Gerçek ölçüm için simülasyon KAPALI başlar. Demo isterseniz aşağıdaki düğmeyi kullanın.</p>
+        <button id="demoBtn" class="big-btn">DEMO (SİMÜLASYON)</button>
     </div>
 
     <div class="hud-controls">
         <button id="calibrateBtn" class="control-btn">SIFIRLA</button>
         <button id="themeBtn" class="control-btn">TEMA</button>
-        <button id="simBtn" class="control-btn sim-active">SİMÜLASYON: AÇIK</button>
+        <button id="simBtn" class="control-btn">SİMÜLASYON: KAPALI</button>
         <button id="streamBtn" class="control-btn">CANLI YAYIN</button>
         <button id="lapBtn" class="control-btn">TUR ATLA</button>
+        <button id="mirrorBtn" class="control-btn">AYNA</button>
     </div>
 
     <canvas id="canvas"></canvas>
 
-    <script>
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/1IzqoYHpdwrAy7So37lOgWq3yUMR3w7EC6oeO0TbT4_s/exec";
+<script>
+/* ===================================================================
+   AYARLAR
+   =================================================================== */
+// DİKKAT: Buraya Google Apps Script "Web uygulaması olarak dağıt" adımındaki URL girilmelidir.
+// Doğru biçim: https://script.google.com/macros/s/AKfycb.........../exec
+// (E-Tablo ID'si DEĞİL, dağıtım ID'si kullanılmalıdır.)
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/1IzqoYHpdwrAy7So37lOgWq3yUMR3w7EC6oeO0TbT4_s/exec";
 
-        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-            document.getElementById('diagnosticPanel').style.display = 'block';
-        }
+const GPS_CFG = {
+    ACC_MAX: 50,          // m: bundan kötü doğruluktaki fix kullanılmaz
+    STALE_HOLD: 4000,     // ms: sinyal kesilince son hız tutulur (tünel)
+    STALE_ZERO: 8000,     // ms: sonra hız 0
+    RESTART_AFTER: 20000, // ms: fix gelmezse watch yeniden başlatılır
+    STOP_DEADBAND: 0.5    // m/s: altı "duruyor"
+};
 
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const startBtn = document.getElementById('startBtn');
-        const calibrateBtn = document.getElementById('calibrateBtn');
-        const themeBtn = document.getElementById('themeBtn');
-        const simBtn = document.getElementById('simBtn');
-        const streamBtn = document.getElementById('streamBtn');
-        const lapBtn = document.getElementById('lapBtn');
-        const overlay = document.getElementById('overlay');
+/* FUSION-BEGIN */
+/* ===================================================================
+   SENSÖR FÜZYONU (DOM'dan bağımsız, test edilebilir)
+   - Yerçekimi: accelerationIncludingGravity - acceleration (OS füzyonlu)
+   - Telefonun araç eksenleri (ileri/sağ) GPS ivmesiyle EN KÜÇÜK KARELER ile öğrenilir
+   - İşaret kuralı (iOS/Android farkı) deviceorientation ile bulunur / öğrenmede kendiliğinden çözülür
+   - Pitch/Roll: yerçekimi vektörünün araç eksenlerindeki bileşenleri (gimbal sorunu yok)
+   =================================================================== */
+const Fusion = (function () {
+    const G = 9.80665, D2R = Math.PI / 180, R2D = 180 / Math.PI;
+    const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    const add = (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+    const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+    const mul = (a, k) => [a[0]*k, a[1]*k, a[2]*k];
+    const nrm = a => Math.sqrt(dot(a, a));
+    const unit = a => { const n = nrm(a); return n > 1e-9 ? mul(a, 1 / n) : null; };
+    const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+    const wrap180 = d => { d = d % 360; if (d > 180) d -= 360; if (d < -180) d += 360; return d; };
+    // v'yi n birim vektörüne dik düzleme izdüşür
+    const perp = (v, n) => sub(v, mul(n, dot(v, n)));
 
-        const THEMES = [
-            { name: "MIL-GREEN", main: "#00ff00" },
-            { name: "BOEING-AMBER", main: "#ffb000" },
-            { name: "AIRBUS-WHITE", main: "#ffffff" }
-        ];
-        let currentThemeIdx = 0;
-
-        let telemetry = {
-            pitch: 0, rawPitch: 0, roll: 0, rawRoll: 0,
-            heading: 0, gpsHeading: null, compassHeading: 0, lastHeading: 0,
-            speed: 0, altitude: 0, lastAltitude: 0, latG: 0, lonG: 0, vertG: 1.0,
-            gpsAccuracy: 0, gpsStatus: "SEARCHING", verticalSpeed: 0, roadGrade: 0,
-            yawRate: 0, radius: 0, sensorType: "INIT", horizonQuality: "OK", warnings: []
+    let st;
+    function reset() {
+        st = {
+            t: null, gOK: false, g: null, gh: null, gLP: null, linS: [0,0,0],
+            hSum: [0,0,0], hN: 0,
+            gRef: null, f: null, r: null, fLocked: false, rLocked: false, sUsed: 1,
+            sAcc: 0, linFlip: 1, linCorr: 0,
+            M11: 0, M12: 0, M22: 0, B1: [0,0,0], B2: [0,0,0],
+            prevV: null, prevH: null, prevT: null,
+            gpsLong: 0, gpsLat: 0, gpsAt: 0, latValid: false, up: null, upT: 0, t0: 0
         };
+    }
+    reset();
 
-        let gHistory = [];
-        let slipHistory = [];
-        const MAX_HISTORY_LENGTH = 60;
+    function sGet() { return Math.abs(st.sAcc) > 0.25 ? (st.sAcc > 0 ? 1 : -1) : null; }
 
-        let offset = { pitch: 90, roll: 0, ax: 0, ay: 0, az: 0 };
-        let isCalibrated = false; let lastGpsTime = null; let lastLat = null; let lastLon = null;
-        let lastUpdateTime = Date.now();
+    // Henüz öğrenilmemişken geçici eksenler: telefon düz (üst kenar öne) varsayımı; dikse arka kamera öne
+    function buildProvisional() {
+        if (!st.gRef) return;
+        const s = sGet() === null ? 1 : sGet();
+        let base = perp([0, 1, 0], st.gRef);
+        if (nrm(base) < 0.5) base = perp([0, 0, -1], st.gRef);
+        const fTrue = unit(base);
+        if (!fTrue) return;
+        st.f = mul(fTrue, s);
+        st.r = mul(cross(st.gRef, st.f), s);
+        st.sUsed = s;
+    }
+    function refreshR() {
+        if (!st.f || !st.gRef) return;
+        const s = sGet() === null ? st.sUsed : sGet();
+        st.r = mul(cross(st.gRef, st.f), s);
+    }
 
-        let timers = {
-            p0_100: { state: 0, start: 0, time: 0 },
-            p100_200: { state: 0, start: 0, time: 0 },
-            d400m: { state: 0, start: 0, time: 0, dist: 0 },
-            currentLap: 0, bestLap: 0, lapStart: 0
+    // tms: ms, ag: accelerationIncludingGravity [x,y,z], lin: acceleration [x,y,z] veya null
+    function imu(tms, ag, lin) {
+        let dt = st.t === null ? 0.016 : (tms - st.t) / 1000;
+        dt = clamp(dt, 0.001, 0.2);
+        st.t = tms;
+
+        // yavaş düşük geçiren (yedek yerçekimi + işaret tutarlılık kontrolü için)
+        if (!st.gLP) st.gLP = ag.slice();
+        else st.gLP = add(st.gLP, mul(sub(ag, st.gLP), dt / (2.5 + dt)));
+
+        let g, l;
+        if (lin) {
+            // acceleration ile accelerationIncludingGravity işaret tutarlılığını doğrula
+            const hp = sub(ag, st.gLP);
+            const nl = nrm(lin), nh = nrm(hp);
+            if (nl > 0.3 && nh > 0.3) {
+                st.linCorr = st.linCorr * 0.995 + 0.005 * (dot(lin, hp) / (nl * nh));
+                st.linFlip = st.linCorr < -0.2 ? -1 : (st.linCorr > 0.2 ? 1 : st.linFlip);
+            }
+            l = mul(lin, st.linFlip);
+            g = sub(ag, l);
+        } else if (st.up && sGet() !== null && (tms - st.upT) < 500) {
+            // yedek 1: yerçekimini gyro-füzyonlu yön sensöründen al (ivmeden etkilenmez)
+            g = mul(st.up, sGet() * G);
+            l = sub(ag, g);
+        } else {
+            g = st.gLP;
+            l = sub(ag, st.gLP);     // yedek 2: yüksek geçiren (ivmeyi biraz eksik gösterir)
+        }
+        st.g = st.g ? add(st.g, mul(sub(g, st.g), clamp(dt / 0.25, 0, 1))) : g.slice();
+        st.linS = add(st.linS, mul(sub(l, st.linS), clamp(dt / 0.06, 0, 1)));
+
+        const gm = nrm(st.g);
+        if (!(gm > 4 && gm < 16)) { st.gOK = false; return; }
+        st.gOK = true;
+        st.gh = mul(st.g, 1 / gm);
+        if (!st.gRef) { st.gRef = st.gh.slice(); st.t0 = tms; }
+        else if (tms - st.t0 < 3000) {            // ilk 3 sn: referansı ortalamayla oturt (ilk örnek kirli olabilir)
+            st.gRef = unit(add(mul(st.gRef, 0.97), mul(st.gh, 0.03))) || st.gRef;
+            if (!st.fLocked) buildProvisional();
+        }
+        if (!st.f) buildProvisional();
+        else if (!st.fLocked) {
+            const s = sGet();
+            if (s !== null && s !== st.sUsed) buildProvisional();
+        }
+        if (st.fLocked && !st.rLocked) refreshR();
+
+        // GPS aralığı boyunca yatay ivme ortalaması
+        const h = perp(st.linS, st.gh);
+        st.hSum = add(st.hSum, h); st.hN++;
+    }
+
+    // deviceorientation (beta, gamma derece): yerçekimi işaret kuralını (iOS/Android) bulur
+    function orient(beta, gamma) {
+        if (!st.gOK) return;
+        const b = beta * D2R, gm = gamma * D2R;
+        const up = [-Math.sin(gm) * Math.cos(b), Math.sin(b), Math.cos(gm) * Math.cos(b)];
+        st.sAcc = st.sAcc * 0.995 + 0.005 * dot(st.gh, up);
+        st.up = up; st.upT = st.t;
+    }
+
+    // GPS fix: tms ms, vMs m/s, hdg derece veya null (düşük hızda null)
+    function gpsFix(tms, vMs, hdg) {
+        if (st.prevT !== null) {
+            const dt = (tms - st.prevT) / 1000;
+            if (dt > 0.4 && dt < 3.5 && (vMs > 3 || st.prevV > 3)) {
+                const aLong = (vMs - st.prevV) / dt;
+                let aLat = 0, latValid = false;
+                if (hdg !== null && st.prevH !== null && vMs > 3 && st.prevV > 3) {
+                    const dpsi = wrap180(hdg - st.prevH) * D2R / dt;
+                    aLat = 0.5 * (vMs + st.prevV) * dpsi;
+                    latValid = true;
+                }
+                st.gpsLong = aLong; st.gpsLat = aLat; st.gpsAt = tms; st.latValid = latValid;
+
+                if (st.gOK && st.hN >= 8 && Math.abs(aLong) < 8 && Math.abs(aLat) < 10) {
+                    const hb = mul(st.hSum, 1 / st.hN);
+                    if (aLong * aLong + aLat * aLat > 0.25) {      // sadece olay anlarında hafıza azalt
+                        const lam = 0.97;
+                        st.M11 *= lam; st.M12 *= lam; st.M22 *= lam;
+                        st.B1 = mul(st.B1, lam); st.B2 = mul(st.B2, lam);
+                    }
+                    st.M11 += aLong * aLong; st.M12 += aLong * aLat; st.M22 += aLat * aLat;
+                    st.B1 = add(st.B1, mul(hb, aLong)); st.B2 = add(st.B2, mul(hb, aLat));
+                    solve();
+                }
+            }
+        }
+        st.prevV = vMs; st.prevH = hdg; st.prevT = tms;
+        st.hSum = [0,0,0]; st.hN = 0;
+    }
+
+    function solve() {
+        const e = 0.2;
+        const a = st.M11 + e, d = st.M22 + e, b = st.M12;
+        const det = a * d - b * b;
+        if (det < 1e-6) return;
+        const i00 = d / det, i01 = -b / det, i10 = -b / det, i11 = a / det;
+        const F = add(mul(st.B1, i00), mul(st.B2, i10));
+        const R = add(mul(st.B1, i01), mul(st.B2, i11));
+        const ref = st.gRef;
+        if (st.M11 > 2.5) {
+            const nF = nrm(F);
+            if (nF > 0.3 && nF < 1.8) {
+                const f = unit(perp(F, ref));
+                if (f) { st.f = f; st.fLocked = true; }
+            }
+        }
+        if (st.fLocked && st.M22 > 2.5) {
+            const nR = nrm(R);
+            if (nR > 0.3 && nR < 1.8) {
+                let r = perp(perp(R, ref), st.f);
+                r = unit(r);
+                if (r) { st.r = r; st.rLocked = true; }
+            }
+        }
+        if (st.fLocked && !st.rLocked) refreshR();
+    }
+
+    function out() {
+        if (!st.gOK || !st.f || !st.r) return null;
+        const lin = st.linS, gh = st.gh;
+        return {
+            fLocked: st.fLocked, rLocked: st.rLocked,
+            lonA: dot(lin, st.f), latA: dot(lin, st.r),
+            pitch: Math.asin(clamp(dot(gh, st.f), -1, 1)) * R2D,
+            roll: -Math.asin(clamp(dot(gh, st.r), -1, 1)) * R2D,
+            vertG: 1 + dot(lin, gh) / G
         };
+    }
+    function gpsAccel() { return { lon: st.gpsLong, lat: st.gpsLat, at: st.gpsAt, latValid: st.latValid }; }
 
-        let isStreaming = false; 
-        let isSimulating = true; // KÖKSEL DÜZELTME: İlk açılışta ekran boş kalmasın diye simülasyon aktif başladı
-        let streamBuffer = []; let lastSampleTime = 0; let lastSendTime = 0;
+    // Aracı düz zeminde dururken referans al
+    function setLevel() {
+        if (!st.gOK) return false;
+        st.gRef = st.gh.slice();
+        if (st.fLocked) {
+            st.f = unit(perp(st.f, st.gRef)) || st.f;
+            if (st.rLocked) st.r = unit(perp(perp(st.r, st.gRef), st.f)) || st.r;
+            else refreshR();
+        } else buildProvisional();
+        return true;
+    }
+    // Öğrenilmiş eksenleri sil ve baştan öğren
+    function resetAxes() {
+        st.fLocked = false; st.rLocked = false;
+        st.M11 = st.M12 = st.M22 = 0; st.B1 = [0,0,0]; st.B2 = [0,0,0];
+        buildProvisional();
+    }
+    function axisState() { return st.fLocked && st.rLocked ? "LOCKED" : (st.fLocked ? "PARTIAL" : "LEARNING"); }
+    function hasSign() { return sGet() !== null; }
 
-        function setHUDColor(idx) { document.body.style.setProperty('--hud-color', THEMES[idx].main); }
-        setHUDColor(currentThemeIdx);
-        themeBtn.addEventListener('click', () => { currentThemeIdx = (currentThemeIdx + 1) % THEMES.length; setHUDColor(currentThemeIdx); });
+    return { reset, imu, orient, gpsFix, out, gpsAccel, setLevel, resetAxes, axisState, hasSign, _st: () => st };
+})();
+/* FUSION-END */
 
-        simBtn.addEventListener('click', () => {
-            isSimulating = !isSimulating;
-            if(isSimulating) {
-                simBtn.classList.add('sim-active'); simBtn.innerText = "SİMÜLASYON: AÇIK";
-            } else {
-                simBtn.classList.remove('sim-active'); simBtn.innerText = "SİMÜLASYON: KAPALI";
-                telemetry.speed = 0; telemetry.latG = 0; telemetry.lonG = 0; gHistory = []; slipHistory = [];
+/* ===================================================================
+   HUD UYGULAMASI
+   =================================================================== */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const demoBtn = document.getElementById('demoBtn');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const themeBtn = document.getElementById('themeBtn');
+const simBtn = document.getElementById('simBtn');
+const streamBtn = document.getElementById('streamBtn');
+const lapBtn = document.getElementById('lapBtn');
+const mirrorBtn = document.getElementById('mirrorBtn');
+const overlay = document.getElementById('overlay');
+const diag = document.getElementById('diagnosticPanel');
+
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const clampV = (x, a, b) => Math.max(a, Math.min(b, x));
+const wrap180 = d => { d = d % 360; if (d > 180) d -= 360; if (d < -180) d += 360; return d; };
+const fx = (v, d) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : "--";
+
+function loadPref(k, def) { try { const v = localStorage.getItem('hud.' + k); return v === null ? def : JSON.parse(v); } catch (e) { return def; } }
+function savePref(k, v) { try { localStorage.setItem('hud.' + k, JSON.stringify(v)); } catch (e) {} }
+
+const THEMES = [
+    { name: "MIL-GREEN", main: "#00ff00" },
+    { name: "BOEING-AMBER", main: "#ffb000" },
+    { name: "AIRBUS-WHITE", main: "#ffffff" }
+];
+let currentThemeIdx = loadPref('theme', 0) % THEMES.length;
+let mirrored = !!loadPref('mirror', false);
+
+let telemetry = {
+    pitch: 0, roll: 0, heading: 0, speed: 0, dispSpeed: 0, vMs: 0,
+    altitude: 0, altValid: false, verticalSpeed: 0, roadGrade: 0,
+    latG: 0, lonG: 0, vertG: 1.0, gSrc: "---",
+    gpsAccuracy: 0, gpsStatus: "SEARCHING", yawRate: 0, radius: 0,
+    sensorType: "INIT", horizonQuality: "OK", warnings: []
+};
+
+const gps = {
+    watchId: null, lastFixTs: 0, lastGoodWall: 0, anchor: null,
+    gpsHeading: null, hdgWall: 0, yawRate: 0, prevHdg: null,
+    prevKmh: 0, prevTs: 0, altF: null, altHist: [], vsF: 0, lastAltWall: 0
+};
+const compass = { value: null, wall: 0, offX: 0, offY: 0, offN: 0, absSupported: ('ondeviceorientationabsolute' in window) };
+const imuState = { lastWall: 0, count: 0 };
+
+let gHistory = [], slipHistory = [], lastHistT = 0;
+const MAX_HISTORY_LENGTH = 60;
+let lastUpdateTime = Date.now();
+let started = false, isSimulating = false;
+let isStreaming = false, streamBuffer = [], lastSampleTime = 0, lastSendTime = 0, streamSent = 0, streamFail = 0;
+let wakeLock = null;
+
+const timers = {
+    armed: true,
+    p0_100: { state: 0, start: 0, time: 0 },
+    p100_200: { state: 0, start: 0, time: 0 },
+    d400m: { state: 0, start: 0, time: 0, dist: 0 },
+    currentLap: 0, bestLap: 0, lapStart: 0
+};
+
+/* ---------- Arayüz ---------- */
+let diagTimer = null;
+function showDiag(html, ms) {
+    diag.innerHTML = html; diag.style.display = 'block';
+    if (diagTimer) clearTimeout(diagTimer);
+    if (ms) diagTimer = setTimeout(() => { diag.style.display = 'none'; }, ms);
+}
+function hideDiag() { diag.style.display = 'none'; }
+
+if (!window.isSecureContext) {
+    showDiag('⚠️ BAĞLANTI GÜVENLİ DEĞİL (HTTPS ZORUNLUDUR)<br><span style="font-size:0.72rem;font-weight:normal">GPS ve sensör verileri HTTP üzerinden engellenir. Lütfen https:// ile açın.</span>');
+}
+
+function setHUDColor(idx) { document.body.style.setProperty('--hud-color', THEMES[idx].main); }
+setHUDColor(currentThemeIdx);
+themeBtn.addEventListener('click', () => { currentThemeIdx = (currentThemeIdx + 1) % THEMES.length; setHUDColor(currentThemeIdx); savePref('theme', currentThemeIdx); });
+
+function applyMirrorBtn() { mirrorBtn.classList.toggle('on-active', mirrored); }
+applyMirrorBtn();
+mirrorBtn.addEventListener('click', () => { mirrored = !mirrored; savePref('mirror', mirrored); applyMirrorBtn(); });
+
+function applySimBtn() {
+    if (isSimulating) { simBtn.classList.add('sim-active'); simBtn.innerText = "SİMÜLASYON: AÇIK"; }
+    else { simBtn.classList.remove('sim-active'); simBtn.innerText = "SİMÜLASYON: KAPALI"; }
+}
+function clearHistories() { gHistory = []; slipHistory = []; }
+function resetLiveState() {
+    telemetry.vMs = 0; telemetry.speed = 0; telemetry.dispSpeed = 0; telemetry.latG = 0; telemetry.lonG = 0;
+    telemetry.yawRate = 0; telemetry.radius = 0; telemetry.verticalSpeed = 0; telemetry.roadGrade = 0;
+    gps.anchor = null; gps.lastFixTs = 0; gps.prevHdg = null; gps.gpsHeading = null; gps.prevKmh = 0; gps.prevTs = 0;
+    gps.altF = null; gps.altHist = []; gps.vsF = 0;
+    telemetry.gpsStatus = "SEARCHING"; telemetry.sensorType = "INIT";
+    timers.armed = true;
+    ['p0_100','p100_200','d400m'].forEach(k => { timers[k].state = 0; timers[k].time = 0; });
+    timers.d400m.dist = 0;
+    clearHistories();
+}
+function setSimulation(on) {
+    isSimulating = on; applySimBtn(); resetLiveState();
+    if (on) { telemetry.gpsStatus = "GOOD (MOCK)"; streamBuffer = []; }
+    else if (started) { startGPSTracking(); }
+}
+simBtn.addEventListener('click', () => setSimulation(!isSimulating));
+
+/* ---------- Ekran / canvas ---------- */
+let cssW = 0, cssH = 0, dpr = 1;
+function resize() {
+    cssW = window.innerWidth; cssH = window.innerHeight; dpr = window.devicePixelRatio || 1;
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    document.body.classList.toggle('simulated-landscape', cssW < cssH);
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 150));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+resize();
+
+/* ---------- Ekranı açık tut ---------- */
+function acquireWake() {
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').then(l => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && started) {
+        if (!wakeLock) acquireWake();
+        if (!isSimulating && gps.watchId === null) startGPSTracking();
+    }
+});
+
+/* ---------- Yardımcı: mesafe / yön ---------- */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * D2R, dLon = (lon2 - lon1) * D2R;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * D2R) * Math.cos(lat2 * D2R) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function bearingTo(a, b) {
+    const y = Math.sin((b.lon - a.lon) * D2R) * Math.cos(b.lat * D2R);
+    const x = Math.cos(a.lat * D2R) * Math.sin(b.lat * D2R) - Math.sin(a.lat * D2R) * Math.cos(b.lat * D2R) * Math.cos((b.lon - a.lon) * D2R);
+    return (Math.atan2(y, x) * R2D + 360) % 360;
+}
+
+/* ===================================================================
+   GPS
+   =================================================================== */
+function onGpsError(err) {
+    if (isSimulating || !err) return;
+    if (err.code === 1) {
+        telemetry.gpsStatus = "GPS BLOCKED";
+        showDiag('⚠️ KONUM İZNİ REDDEDİLDİ<br><span style="font-size:0.72rem;font-weight:normal">Ayarlar › Gizlilik › Konum Servisleri › Safari Web Siteleri › "Uygulamayı Kullanırken" seçin, sayfayı yenileyin.</span>');
+    } else if (err.code === 2) {
+        telemetry.gpsStatus = "NO SIGNAL";
+    } else if (telemetry.gpsStatus !== "GOOD" && telemetry.gpsStatus !== "OK") {
+        telemetry.gpsStatus = "SEARCHING";
+    }
+}
+
+function startGPSTracking() {
+    if (!navigator.geolocation) { telemetry.gpsStatus = "NOT SUPPORTED"; return; }
+    if (gps.watchId !== null) { navigator.geolocation.clearWatch(gps.watchId); gps.watchId = null; }
+    gps.watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+
+function onPosition(pos) {
+    if (isSimulating) return;
+    const c = pos.coords, wall = Date.now();
+    const ts = (typeof pos.timestamp === 'number' && Math.abs(pos.timestamp - wall) < 10000) ? pos.timestamp : wall;
+    if (gps.lastFixTs && ts <= gps.lastFixTs) return;                 // eski/sıra dışı fix
+
+    const acc = (typeof c.accuracy === 'number' && isFinite(c.accuracy)) ? c.accuracy : 999;
+    telemetry.gpsAccuracy = acc;
+    if (acc > GPS_CFG.ACC_MAX) { telemetry.gpsStatus = "WEAK"; return; }  // hız için kullanma
+    telemetry.gpsStatus = acc <= 10 ? "GOOD" : (acc <= 25 ? "OK" : "POOR");
+    gps.lastGoodWall = wall;
+    if (diag.style.display === 'block' && telemetry.gpsStatus !== "GPS BLOCKED") hideDiag();
+
+    const dt = gps.lastFixTs ? (ts - gps.lastFixTs) / 1000 : 0;
+    const cur = { lat: c.latitude, lon: c.longitude };
+
+    // --- Hız: önce Doppler, yoksa çapa yöntemiyle konumdan ---
+    let v = (typeof c.speed === 'number' && isFinite(c.speed) && c.speed >= 0) ? c.speed : null;
+    let derivedHdg = null;
+    const thr = Math.max(3, acc * 0.6);
+    if (!gps.anchor) { gps.anchor = { lat: cur.lat, lon: cur.lon, t: ts }; }
+    else {
+        const d = calculateDistance(gps.anchor.lat, gps.anchor.lon, cur.lat, cur.lon);
+        const adt = (ts - gps.anchor.t) / 1000;
+        if (d > thr && adt > 0) {
+            if (v === null) v = Math.min(d / adt, 80);
+            derivedHdg = bearingTo(gps.anchor, cur);
+            gps.anchor = { lat: cur.lat, lon: cur.lon, t: ts };
+        } else if (v === null) {
+            v = adt > 4 ? 0 : telemetry.vMs;
+        }
+    }
+    if (v === null) v = 0;
+    if (v < GPS_CFG.STOP_DEADBAND) v = 0;
+    if (v > 110) v = telemetry.vMs;                                   // >395 km/h imkânsız
+    if (dt > 0 && dt < 5) v = Math.max(telemetry.vMs - 14 * dt, Math.min(telemetry.vMs + 9 * dt, v)); // ivme sınırı
+
+    // --- Yön ---
+    let hdg = null;
+    if (typeof c.heading === 'number' && isFinite(c.heading) && c.heading >= 0 && v > 2.5) hdg = c.heading;
+    else if (derivedHdg !== null && v > 2.5) hdg = derivedHdg;
+    if (hdg !== null) { gps.gpsHeading = hdg; gps.hdgWall = wall; }
+
+    // --- Yaw (GPS yedek): sağ pozitif ---
+    if (hdg !== null && gps.prevHdg !== null && dt > 0.3 && dt < 3.5 && v > 3) {
+        const yr = wrap180(hdg - gps.prevHdg) / dt;
+        gps.yawRate = gps.yawRate * 0.5 + yr * 0.5;
+    } else if (v <= 3) gps.yawRate *= 0.5;
+    gps.prevHdg = hdg;
+
+    // --- Yumuşatma ---
+    const prevV = telemetry.vMs;
+    let sm;
+    if (v === 0 && prevV < 2.5) sm = 0; else sm = prevV + (prevV === 0 ? 1 : 0.6) * (v - prevV);
+    telemetry.vMs = sm; telemetry.speed = sm * 3.6;
+
+    // --- Zamanlayıcılar (fix zamanına göre, enterpolasyonlu) ---
+    if (gps.prevTs) timersOnFix(gps.prevTs, gps.prevKmh, ts, v * 3.6, Math.max(dt, 0.001));
+    gps.prevTs = ts; gps.prevKmh = v * 3.6;
+
+    // --- Füzyon: eksen öğrenme ---
+    Fusion.gpsFix(ts, v, hdg);
+
+    // --- Rakım / dikey hız / eğim ---
+    if (typeof c.altitude === 'number' && isFinite(c.altitude)) {
+        const altAcc = (typeof c.altitudeAccuracy === 'number' && isFinite(c.altitudeAccuracy)) ? c.altitudeAccuracy : 20;
+        const k = altAcc <= 10 ? 0.2 : (altAcc <= 25 ? 0.1 : 0.05);
+        gps.altF = gps.altF === null ? c.altitude : gps.altF + k * (c.altitude - gps.altF);
+        telemetry.altitude = Math.round(gps.altF); telemetry.altValid = true;
+        gps.altHist.push({ t: wall, a: gps.altF });
+        while (gps.altHist.length && wall - gps.altHist[0].t > 10000) gps.altHist.shift();
+        if (gps.altHist.length > 3) {
+            const o = gps.altHist[0], span = (wall - o.t) / 1000;
+            if (span >= 4) {
+                const vs = (gps.altF - o.a) / span;
+                gps.vsF = gps.vsF * 0.7 + vs * 0.3;
+                telemetry.verticalSpeed = gps.vsF;
+                telemetry.roadGrade = sm > 3 ? clampV((gps.vsF / sm) * 100, -25, 25) : 0;
             }
+        }
+    }
+
+    gps.lastFixTs = ts;
+}
+
+/* ===================================================================
+   IMU (devicemotion / deviceorientation)
+   =================================================================== */
+function handleMotion(e) {
+    if (isSimulating) return;
+    const ag = e.accelerationIncludingGravity;
+    if (!ag || ag.x === null || ag.y === null || ag.z === null) return;
+    const a = e.acceleration;
+    const lin = (a && a.x !== null && a.y !== null && a.z !== null) ? [a.x, a.y, a.z] : null;
+    Fusion.imu(performance.now(), [ag.x, ag.y, ag.z], lin);
+    imuState.lastWall = Date.now(); imuState.count++;
+}
+function handleOrientation(e) {
+    if (isSimulating) return;
+    if (e.beta !== null && e.gamma !== null && !(e.absolute === true && e.type === 'deviceorientationabsolute')) Fusion.orient(e.beta, e.gamma);
+    let c = null;
+    if (typeof e.webkitCompassHeading === 'number' && isFinite(e.webkitCompassHeading)) c = e.webkitCompassHeading;
+    else if (e.alpha !== null && e.alpha !== undefined && (e.type === 'deviceorientationabsolute' || !compass.absSupported)) c = (360 - e.alpha + 360) % 360;
+    if (c !== null) { compass.value = c; compass.wall = Date.now(); }
+}
+
+let sensorListenersAdded = false;
+function addSensorListeners() {
+    if (sensorListenersAdded) return; sensorListenersAdded = true;
+    window.addEventListener('devicemotion', handleMotion, true);
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    if (compass.absSupported) window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+}
+
+/* ===================================================================
+   Zamanlayıcılar: 0-100, 100-200, 400 m, tur
+   =================================================================== */
+function timersOnFix(tPrev, vPrev, tNow, vNow, dtS) {
+    const T = timers;
+    const cross = th => tPrev + (tNow - tPrev) * ((th - vPrev) / Math.max(0.001, vNow - vPrev));
+
+    if (vNow < 2) {                                // duruyor: silahlan, süren koşuyu iptal et
+        T.armed = true;
+        if (T.p0_100.state === 1 || T.d400m.state === 1) {
+            T.p0_100.state = 0; T.p0_100.time = 0; T.p100_200.state = 0; T.p100_200.time = 0;
+            T.d400m.state = 0; T.d400m.time = 0; T.d400m.dist = 0;
+        }
+        return;
+    }
+    if (T.armed && vNow >= 3) {                    // duruştan kalkış
+        const t0 = vPrev < 1 ? cross(1) : tPrev;
+        T.p0_100 = { state: 1, start: t0, time: 0 };
+        T.p100_200 = { state: 0, start: 0, time: 0 };
+        T.d400m = { state: 1, start: t0, time: 0, dist: 0 };
+        T.armed = false;
+    }
+    if (T.d400m.state === 1) {
+        T.d400m.dist += ((vPrev + vNow) / 2 / 3.6) * dtS;
+        if (T.d400m.dist >= 400) {
+            const over = (T.d400m.dist - 400) / Math.max(1, vNow / 3.6);
+            T.d400m.time = (tNow - T.d400m.start) / 1000 - over; T.d400m.state = 2;
+        }
+    }
+    if (T.p0_100.state === 1 && vNow >= 100) {
+        const tc = cross(100);
+        T.p0_100.time = (tc - T.p0_100.start) / 1000; T.p0_100.state = 2;
+        T.p100_200 = { state: 1, start: tc, time: 0 };
+    }
+    if (T.p100_200.state === 1) {
+        if (vNow >= 200) { const tc = cross(200); T.p100_200.time = (tc - T.p100_200.start) / 1000; T.p100_200.state = 2; }
+        else if (vNow < 90) { T.p100_200.state = 0; T.p100_200.time = 0; }
+    }
+}
+const liveTime = o => o.state === 1 ? (Date.now() - o.start) / 1000 : o.time;
+
+lapBtn.addEventListener('click', () => {
+    const t = (Date.now() - timers.lapStart) / 1000; timers.currentLap = t;
+    if (timers.bestLap === 0 || t < timers.bestLap) timers.bestLap = t;
+    timers.lapStart = Date.now();
+});
+function formatLapTime(sec) {
+    if (!(sec > 0)) return "--:--.---";
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+}
+
+/* ===================================================================
+   Canlı yayın
+   =================================================================== */
+streamBtn.addEventListener('click', () => {
+    isStreaming = !isStreaming;
+    if (isStreaming) {
+        if (isSimulating) showDiag('Simülasyon verisi Google Sheets\'e gönderilmez. Önce simülasyonu kapatın.', 4000);
+        streamBuffer = []; lastSendTime = Date.now();
+        streamBtn.classList.add('streaming-active'); streamBtn.innerText = "YAYIN AKTİF";
+    } else {
+        streamBtn.classList.remove('streaming-active'); streamBtn.innerText = "CANLI YAYIN";
+    }
+});
+function handleLiveStreaming(now) {
+    if (!isStreaming || isSimulating) return;
+    if (now - lastSampleTime >= 1000 && now - gps.lastGoodWall < 3000) {
+        streamBuffer.push({
+            time: new Date().toLocaleTimeString('tr-TR'), pitch: fx(telemetry.pitch, 2), roll: fx(telemetry.roll, 2),
+            speed: Math.round(telemetry.dispSpeed), heading: Math.round(telemetry.heading), alt: telemetry.altitude,
+            latG: fx(telemetry.latG, 3), lonG: fx(telemetry.lonG, 3), vertG: fx(telemetry.vertG, 3), grade: fx(telemetry.roadGrade, 1)
         });
+        if (streamBuffer.length > 600) streamBuffer.shift();
+        lastSampleTime = now;
+    }
+    if (now - lastSendTime >= 3000 && streamBuffer.length > 0) {
+        const batch = streamBuffer; streamBuffer = []; lastSendTime = now;
+        fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(batch) })
+            .then(() => { streamSent += batch.length; })
+            .catch(() => { streamFail++; streamBuffer = batch.concat(streamBuffer).slice(-600); });  // ağ kesilirse veri kaybolmasın
+    }
+}
 
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+/* ===================================================================
+   Kalibrasyon düğmesi (tek: seviye sıfırla, çift: eksenleri yeniden öğren)
+   =================================================================== */
+let lastCalTap = 0;
+calibrateBtn.addEventListener('click', () => {
+    if (isSimulating) return;
+    const n = Date.now();
+    if (n - lastCalTap < 700) {
+        Fusion.resetAxes(); showDiag('Eksenler sıfırlandı: hızlanıp fren/viraj yaparak yeniden öğrenilecek.', 3500);
+    } else {
+        if (Fusion.setLevel()) showDiag('Seviye referansı alındı (araç düz zeminde olmalı).', 2500);
+        else showDiag('Sensör verisi yok: Hareket ve Yön izni gerekli.', 3500);
+    }
+    lastCalTap = n; clearHistories();
+});
+
+/* ===================================================================
+   Başlatma
+   =================================================================== */
+async function beginSystems(sim) {
+    overlay.style.display = 'none';
+    started = true; timers.lapStart = Date.now();
+    isSimulating = sim; applySimBtn(); resetLiveState();
+    if (sim) { telemetry.gpsStatus = "GOOD (MOCK)"; return; }
+
+    // İzin istekleri kullanıcı dokunuşuyla aynı anda başlatılmalı (iOS)
+    const perms = [];
+    try { if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') perms.push(DeviceMotionEvent.requestPermission()); } catch (e) {}
+    try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') perms.push(DeviceOrientationEvent.requestPermission()); } catch (e) {}
+    startGPSTracking();
+    acquireWake();
+    try { await Promise.all(perms.map(p => p.catch(() => null))); } catch (e) {}
+    addSensorListeners();
+
+    setTimeout(() => {
+        if (!isSimulating && imuState.count === 0) {
+            showDiag('⚠️ SENSÖR VERİSİ YOK<br><span style="font-size:0.72rem;font-weight:normal">"Hareket ve Yön Erişimi" izni verilmedi olabilir (Ayarlar › Safari). Hız GPS ile çalışır; eğim ve G değerleri GPS\'ten türetilir.</span>', 9000);
         }
+    }, 4000);
+}
+startBtn.addEventListener('click', () => { beginSystems(false); animateOnce(); });
+demoBtn.addEventListener('click', () => { beginSystems(true); animateOnce(); });
 
-        function resize() {
-            const w = window.innerWidth; const h = window.innerHeight;
-            canvas.width = w * window.devicePixelRatio; canvas.height = h * window.devicePixelRatio;
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-            
-            if (w < h) {
-                document.body.classList.add('simulated-landscape');
-            } else {
-                document.body.classList.remove('simulated-landscape');
+/* ===================================================================
+   Veri adımları
+   =================================================================== */
+function simStep(now) {
+    const t = now / 1000;
+    telemetry.vMs = (95 + 60 * Math.sin(t * 0.4)) / 3.6;
+    telemetry.speed = telemetry.vMs * 3.6;
+    telemetry.heading = (t * 12) % 360;
+    telemetry.pitch = 6 * Math.sin(t * 0.5);
+    telemetry.roll = 22 * Math.cos(t * 0.35);
+    telemetry.lonG = 0.5 * Math.cos(t * 0.4);
+    telemetry.latG = -0.75 * Math.sin(t * 0.35);
+    telemetry.altitude = Math.round(210 + 25 * Math.sin(t * 0.1)); telemetry.altValid = true;
+    telemetry.verticalSpeed = 1.5 * Math.cos(t * 0.1);
+    telemetry.roadGrade = (telemetry.verticalSpeed / (telemetry.vMs || 1)) * 100;
+    telemetry.gpsStatus = "GOOD (MOCK)"; telemetry.gpsAccuracy = 1.0; telemetry.sensorType = "SIMULATION";
+    telemetry.gSrc = "SIM"; telemetry.horizonQuality = "OK";
+    telemetry.yawRate = 15 * Math.cos(t);
+    const om = Math.abs(telemetry.yawRate) * D2R;
+    telemetry.radius = om > 0.01 && telemetry.vMs > 2 ? Math.round(telemetry.vMs / om) : 0;
+}
+
+function realStep(now, dt) {
+    const age = now - gps.lastGoodWall;
+    const hasEverFix = gps.lastGoodWall > 0;
+
+    // --- Sinyal bekçisi ---
+    if (hasEverFix) {
+        if (age > GPS_CFG.STALE_HOLD && telemetry.gpsStatus !== "GPS BLOCKED") telemetry.gpsStatus = "STALE";
+        if (age > GPS_CFG.STALE_ZERO) { telemetry.vMs = 0; telemetry.speed = 0; gps.yawRate = 0; }
+        if (age > GPS_CFG.RESTART_AFTER && gps.watchId !== null && now - (gps.lastRestart || 0) > GPS_CFG.RESTART_AFTER) {
+            gps.lastRestart = now; startGPSTracking();
+        }
+    }
+    const vMs = telemetry.vMs;
+
+    // --- Yön: GPS izi > hizalanmış pusula ---
+    const hdgFresh = gps.gpsHeading !== null && now - gps.hdgWall < 3000;
+    const compFresh = compass.value !== null && now - compass.wall < 1500;
+    if (vMs > 5 && hdgFresh && compFresh) {              // pusula ofsetini (montaj yönü) GPS'e göre öğren
+        const d = wrap180(gps.gpsHeading - compass.value) * D2R;
+        compass.offX = compass.offX * 0.97 + Math.cos(d) * 0.03;
+        compass.offY = compass.offY * 0.97 + Math.sin(d) * 0.03; compass.offN++;
+    }
+    const offDeg = Math.atan2(compass.offY, compass.offX) * R2D;
+    let target = telemetry.heading;
+    if (vMs > 2.5 && hdgFresh) { target = gps.gpsHeading; telemetry.sensorType = "GPS TRACK"; }
+    else if (compFresh) {
+        target = (compass.value + offDeg + 720) % 360;
+        telemetry.sensorType = compass.offN > 40 ? "MAG ALIGNED" : "MAG RAW";
+    } else telemetry.sensorType = "NO HDG";
+    telemetry.heading = (telemetry.heading + wrap180(target - telemetry.heading) * (1 - Math.exp(-dt / 0.15)) + 360) % 360;
+
+    // --- IMU çıktıları ---
+    const imuFresh = now - imuState.lastWall < 1500;
+    const o = imuFresh ? Fusion.out() : null;
+    const gp = Fusion.gpsAccel();
+    const gpsAccelFresh = (now - gps.lastGoodWall) < 2500 && gp.at > 0;
+    let latA = 0, lonA = 0, src = "---";
+    if (o && o.fLocked && o.rLocked) { latA = o.latA; lonA = o.lonA; src = "IMU"; }
+    else if (o && o.fLocked) { lonA = o.lonA; latA = gpsAccelFresh ? gp.lat : 0; src = "IMU/GPS"; }
+    else if (gpsAccelFresh) { lonA = gp.lon; latA = gp.lat; src = "GPS"; }
+    const kg = 1 - Math.exp(-dt / 0.1);
+    telemetry.latG += (latA / 9.80665 - telemetry.latG) * kg;
+    telemetry.lonG += (lonA / 9.80665 - telemetry.lonG) * kg;
+    telemetry.gSrc = src;
+
+    if (o) {
+        const kp = 1 - Math.exp(-dt / 0.15);
+        telemetry.pitch += (o.pitch - telemetry.pitch) * kp;
+        telemetry.roll += (o.roll - telemetry.roll) * kp;
+        telemetry.vertG += (o.vertG - telemetry.vertG) * kp;
+        telemetry.horizonQuality = (Math.abs(o.pitch) > 45 || Math.abs(o.roll) > 50) ? "DEGRADED" : (Fusion.axisState() === "LEARNING" ? "UNCAL" : "OK");
+    } else telemetry.horizonQuality = "NO IMU";
+
+    // --- Yaw / yarıçap: önce IMU yanal ivme, yoksa GPS yönü ---
+    let yawT;
+    if (o && o.rLocked && vMs > 3) yawT = (latA / vMs) * R2D; else yawT = gps.yawRate;
+    telemetry.yawRate += (yawT - telemetry.yawRate) * (1 - Math.exp(-dt / 0.25));
+    telemetry.radius = (Math.abs(telemetry.yawRate) > 1 && vMs > 2) ? Math.round(vMs / (Math.abs(telemetry.yawRate) * D2R)) : 0;
+}
+
+/* ===================================================================
+   Çizim
+   =================================================================== */
+function frame() {
+    const now = Date.now();
+    let dt = (now - lastUpdateTime) / 1000; lastUpdateTime = now;
+    dt = clampV(dt, 0.001, 0.25);
+    if (window.innerWidth !== cssW || window.innerHeight !== cssH) resize();
+
+    // NaN koruması
+    ['speed','vMs','pitch','roll','latG','lonG','vertG','yawRate','radius','verticalSpeed','roadGrade','heading','altitude'].forEach(k => { if (!isFinite(telemetry[k])) telemetry[k] = 0; });
+
+    if (isSimulating) simStep(now); else realStep(now, dt);
+
+    telemetry.dispSpeed += (telemetry.speed - telemetry.dispSpeed) * (1 - Math.exp(-dt / 0.25));
+    if (Math.abs(telemetry.speed - telemetry.dispSpeed) < 0.05) telemetry.dispSpeed = telemetry.speed;
+
+    if (now - lastHistT >= 33) {
+        lastHistT = now;
+        gHistory.push({ latG: telemetry.latG, lonG: telemetry.lonG }); if (gHistory.length > MAX_HISTORY_LENGTH) gHistory.shift();
+        slipHistory.push({ latG: telemetry.latG }); if (slipHistory.length > MAX_HISTORY_LENGTH) slipHistory.shift();
+    }
+    handleLiveStreaming(now);
+
+    // Uyarılar
+    telemetry.warnings = [];
+    if (isSimulating) telemetry.warnings.push("SIMULATION - NOT REAL DATA");
+    else {
+        const gs = telemetry.gpsStatus;
+        if (gs === "GPS BLOCKED") telemetry.warnings.push("GPS BLOCKED BY BROWSER");
+        else if (gs === "SEARCHING") telemetry.warnings.push("ACQUIRING GPS...");
+        else if (gs === "NO SIGNAL" || gs === "STALE") telemetry.warnings.push("GPS SIGNAL LOST");
+        else if (gs === "WEAK") telemetry.warnings.push("GPS ACCURACY LOW");
+        if (telemetry.horizonQuality === "NO IMU") telemetry.warnings.push("NO IMU DATA");
+        else if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
+        else if (imuState.count > 0 && Fusion.axisState() === "LEARNING") telemetry.warnings.push("AXIS LEARNING (G FROM GPS)");
+    }
+
+    draw(now);
+}
+
+function draw(now) {
+    const theme = THEMES[currentThemeIdx];
+    const w = cssW, h = cssH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+
+    let vW, vH, isPortraitSimulated = false;
+    ctx.translate(w / 2, h / 2);
+    if (w < h) { ctx.rotate(Math.PI / 2); vW = h; vH = w; isPortraitSimulated = true; } else { vW = w; vH = h; }
+    const kS = clampV(Math.min(vW / 820, vH / 380), 0.75, 1.8);
+    ctx.scale(kS, kS); vW /= kS; vH /= kS;
+    if (mirrored) ctx.scale(-1, 1);
+
+    const tapeH = vH * 0.52;
+    const leftTapeX = -vW / 2 + (isPortraitSimulated ? 85 : 95);
+    const rightTapeX = vW / 2 - 60 - (isPortraitSimulated ? 85 : 95);
+    const noFix = !isSimulating && !(telemetry.gpsStatus === "GOOD" || telemetry.gpsStatus === "OK" || telemetry.gpsStatus === "POOR" || telemetry.gpsStatus === "STALE");
+
+    // --- 1. COMPASS RIBBON ---
+    const ribbonY = -vH / 2 + (isPortraitSimulated ? 35 : 20);
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(-vW/3, ribbonY, (vW/3)*2, 22);
+    ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.strokeRect(-vW/3, ribbonY, (vW/3)*2, 22);
+    ctx.save(); ctx.beginPath(); ctx.rect(-vW/3, ribbonY, (vW/3)*2, 22); ctx.clip();
+    ctx.fillStyle = theme.main; ctx.textAlign = "center"; ctx.font = "bold 11px monospace";
+    const centerHdg = telemetry.heading, pxPerDeg = 2.5;
+    for (let hDeg = Math.floor(centerHdg - 60); hDeg <= centerHdg + 60; hDeg++) {
+        const normDeg = ((hDeg % 360) + 360) % 360, xPos = (hDeg - centerHdg) * pxPerDeg;
+        if (normDeg % 5 === 0) {
+            const isMajor = normDeg % 10 === 0;
+            ctx.beginPath(); ctx.moveTo(xPos, ribbonY + (isMajor ? 0 : 6)); ctx.lineTo(xPos, ribbonY + 12); ctx.stroke();
+            if (isMajor) {
+                let label = String(normDeg / 10).padStart(2, '0');
+                if (normDeg === 0) label = "N"; if (normDeg === 90) label = "E"; if (normDeg === 180) label = "S"; if (normDeg === 270) label = "W";
+                if (mirrored) { ctx.save(); ctx.translate(xPos, ribbonY + 20); ctx.scale(-1, 1); ctx.fillText(label, 0, 0); ctx.restore(); }
+                else ctx.fillText(label, xPos, ribbonY + 20);
             }
         }
-        window.addEventListener('resize', resize); resize();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#ff3333"; ctx.beginPath(); ctx.moveTo(0, ribbonY + 24); ctx.lineTo(-5, ribbonY + 31); ctx.lineTo(5, ribbonY + 31); ctx.closePath(); ctx.fill();
 
-        async function requestHardwarePermissions() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try { await DeviceOrientationEvent.requestPermission(); } catch(e) { console.log(e); }
-            }
-            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                try { await DeviceMotionEvent.requestPermission(); } catch(e) { console.log(e); }
-            }
-            window.addEventListener('deviceorientation', handleOrientation, true);
-            window.addEventListener('devicemotion', handleMotion, true);
+    // Metinleri aynalı modda ters çizmemek için yardımcı
+    const text = (s, x, y) => {
+        if (mirrored) { ctx.save(); ctx.translate(x, y); ctx.scale(-1, 1);
+            const a = ctx.textAlign; ctx.textAlign = a === "left" ? "right" : (a === "right" ? "left" : a);
+            ctx.fillText(s, 0, 0); ctx.restore(); }
+        else ctx.fillText(s, x, y);
+    };
+
+    // --- 2. ATTITUDE ---
+    const attY = ribbonY + 55;
+    ctx.save(); ctx.translate(0, attY); ctx.rotate(-telemetry.roll * D2R);
+    const pShift = clampV(telemetry.pitch, -30, 30) * 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-30, pShift); ctx.lineTo(30, pShift); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-15, pShift - 10); ctx.lineTo(15, pShift - 10); ctx.moveTo(-15, pShift + 10); ctx.lineTo(15, pShift + 10); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = theme.main; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-35, attY); ctx.lineTo(-15, attY); ctx.lineTo(-11, attY + 4); ctx.moveTo(35, attY); ctx.lineTo(15, attY); ctx.lineTo(11, attY + 4); ctx.moveTo(-2, attY); ctx.lineTo(2, attY); ctx.stroke();
+    ctx.fillStyle = theme.main; ctx.font = "9px monospace"; ctx.textAlign = "center";
+    text(`P: ${telemetry.pitch >= 0 ? '+' : ''}${Math.round(telemetry.pitch)}°  R: ${Math.round(telemetry.roll)}°`, 0, attY - 15);
+
+    // --- 3. TRACTION CIRCLE & G-BALL ---
+    const gX = 0, gY = attY + 95, gBallRadius = 65;
+    ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.33, 0, 2*Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.66, 0, 2*Math.PI); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath(); ctx.arc(gX, gY, gBallRadius, 0, 2*Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gX - gBallRadius, gY); ctx.lineTo(gX + gBallRadius, gY); ctx.moveTo(gX, gY - gBallRadius); ctx.lineTo(gX, gY + gBallRadius); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "7px monospace"; ctx.textAlign = "center";
+    text("0.5G", gX, gY - (gBallRadius*0.33) + 2); text("1.0G", gX, gY - (gBallRadius*0.66) + 2); text("1.5G", gX, gY - gBallRadius + 2);
+
+    ctx.save();
+    for (let i = 0; i < gHistory.length; i++) {
+        const hh = gHistory[i];
+        const hX = gX - (hh.latG * (gBallRadius / 1.5)), hY = gY + (hh.lonG * (gBallRadius / 1.5));
+        ctx.globalAlpha = (i / gHistory.length) * 0.50; ctx.fillStyle = "#ff0055";
+        ctx.beginPath(); ctx.arc(hX, hY, 2.5, 0, 2*Math.PI); ctx.fill();
+    }
+    ctx.restore();
+
+    const gLim = gBallRadius;
+    const ballX = clampV(gX - (telemetry.latG * (gBallRadius / 1.5)), gX - gLim, gX + gLim);
+    const ballY = clampV(gY + (telemetry.lonG * (gBallRadius / 1.5)), gY - gLim, gY + gLim);
+    ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); ctx.stroke();
+    ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 6, 0, 2*Math.PI); ctx.fill();
+
+    ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
+    text(`LAT G: ${fx(telemetry.latG, 2)}`, -gBallRadius - 12, gY + 4);
+    ctx.textAlign = "left"; text(`LON G: ${fx(telemetry.lonG, 2)}`, gBallRadius + 12, gY + 4);
+
+    // --- 4. SLIP / SKID ---
+    const slipY = gY + gBallRadius + 24, slipW = Math.min(vW * 0.65, 400);
+    ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5;
+    ctx.strokeRect(gX - slipW/2, slipY, slipW, 8);
+    ctx.beginPath(); ctx.moveTo(gX - slipW/4, slipY); ctx.lineTo(gX - slipW/4, slipY + 8); ctx.moveTo(gX + slipW/4, slipY); ctx.lineTo(gX + slipW/4, slipY + 8); ctx.stroke();
+    ctx.save();
+    for (let i = 0; i < slipHistory.length; i++) {
+        let hb = gX - (slipHistory[i].latG * (slipW * 0.45));
+        hb = clampV(hb, gX - (slipW/2 - 4), gX + (slipW/2 - 4));
+        ctx.globalAlpha = (i / slipHistory.length) * 0.50; ctx.fillStyle = theme.main;
+        ctx.beginPath(); ctx.arc(hb, slipY + 4, 2, 0, 2*Math.PI); ctx.fill();
+    }
+    ctx.restore();
+    const slipBallX = clampV(gX - (telemetry.latG * (slipW * 0.45)), gX - (slipW/2 - 4), gX + (slipW/2 - 4));
+    ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(slipBallX, slipY + 4, 4, 0, 2*Math.PI); ctx.fill();
+    ctx.font = "bold 8px monospace"; ctx.textAlign = "center"; text("SLIP / SKID SYSTEM", gX, slipY - 5);
+
+    // --- 5. YAW / RADIUS ---
+    const driftInfoY = slipY + 24;
+    ctx.fillStyle = "#00ffff"; ctx.font = "10px monospace"; ctx.textAlign = "center";
+    const radiusStr = (telemetry.radius > 0 && telemetry.radius < 1500) ? `${telemetry.radius} M` : '---';
+    text(`RADIUS: ${radiusStr}`, gX, driftInfoY);
+    ctx.fillStyle = theme.main; text(`YAW RATE: ${Math.round(telemetry.yawRate)}°/S`, gX, driftInfoY + 11);
+
+    // --- 6. SPEED TAPE ---
+    const spd = telemetry.dispSpeed;
+    ctx.save(); ctx.beginPath(); ctx.rect(leftTapeX, -tapeH/2, 60, tapeH); ctx.clip();
+    ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(leftTapeX, -tapeH/2, 60, tapeH);
+    ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.strokeRect(leftTapeX, -tapeH/2, 60, tapeH);
+    ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
+    const startSpeed = Math.floor(spd / 10) * 10 - 60;
+    for (let s = startSpeed; s <= startSpeed + 120; s += 10) {
+        if (s < 0) continue;
+        const sY = (spd - s) * 3.5;
+        ctx.beginPath(); ctx.moveTo(leftTapeX + 60, sY); ctx.lineTo(leftTapeX + 52, sY); ctx.stroke();
+        text(String(s), leftTapeX + 46, sY + 4);
+    }
+    ctx.restore();
+    ctx.fillStyle = "#000000"; ctx.fillRect(leftTapeX - 15, -14, 85, 28); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1; ctx.strokeRect(leftTapeX - 15, -14, 85, 28);
+    ctx.fillStyle = theme.main; ctx.font = "bold 14px monospace"; ctx.textAlign = "left";
+    text(noFix ? "---" : String(Math.round(spd)).padStart(3, '0'), leftTapeX - 6, 5);
+    ctx.font = "bold 8px monospace"; text("KM/H", leftTapeX + 26, 4);
+
+    // --- 7. ALTITUDE TAPE ---
+    const altV = telemetry.altitude;
+    ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, 60, tapeH); ctx.clip();
+    ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(rightTapeX, -tapeH/2, 60, tapeH);
+    ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.strokeRect(rightTapeX, -tapeH/2, 60, tapeH);
+    ctx.fillStyle = theme.main; ctx.textAlign = "left"; ctx.font = "11px monospace";
+    const startAlt = Math.floor(altV / 20) * 20 - 100;
+    for (let a = startAlt; a <= startAlt + 200; a += 20) {
+        const aY = (altV - a) * 1.5;
+        ctx.beginPath(); ctx.moveTo(rightTapeX, aY); ctx.lineTo(rightTapeX + 8, aY); ctx.stroke();
+        text(String(a), rightTapeX + 14, aY + 4);
+    }
+    ctx.restore();
+    ctx.fillStyle = "#000000"; ctx.fillRect(rightTapeX - 10, -14, 85, 28); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1; ctx.strokeRect(rightTapeX - 10, -14, 85, 28);
+    ctx.fillStyle = theme.main; ctx.font = "bold 12px monospace"; ctx.textAlign = "right";
+    text((telemetry.altValid || isSimulating) ? altV + "M" : "---", rightTapeX + 55, 4);
+    const vsiX = rightTapeX + 82; ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
+    ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, clampV(-telemetry.verticalSpeed * 5, -25, 25), 3, 0, 2*Math.PI); ctx.fill();
+
+    // --- 8. TIMERS & LAP ---
+    const pX = leftTapeX, pY = vH / 2 - (isPortraitSimulated ? 95 : 110);
+    ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(pX, pY, 150, 68); ctx.strokeStyle = theme.main; ctx.strokeRect(pX, pY, 150, 68);
+    ctx.fillStyle = theme.main; ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
+    text(`0-100 KM/H : ${fx(liveTime(timers.p0_100), 2)}s`, pX + 6, pY + 12);
+    text(`100-200 H  : ${fx(liveTime(timers.p100_200), 2)}s`, pX + 6, pY + 23);
+    text(`400M DRAG  : ${fx(liveTime(timers.d400m), 2)}s (${Math.round(timers.d400m.dist)}m)`, pX + 6, pY + 34);
+    ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.moveTo(pX, pY + 39); ctx.lineTo(pX + 150, pY + 39); ctx.stroke();
+    ctx.fillStyle = "#00ffff";
+    text(`CUR LAP: ${formatLapTime((Date.now() - timers.lapStart) / 1000)}`, pX + 6, pY + 50);
+    text(`BEST   : ${formatLapTime(timers.bestLap)}`, pX + 6, pY + 61);
+
+    // --- 9. ROAD GRADE & STOPPING ---
+    const rX = rightTapeX + 60 - 140;
+    ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(rX, pY + 28, 140, 40); ctx.strokeStyle = theme.main; ctx.strokeRect(rX, pY + 28, 140, 40);
+    ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
+    text(`ROAD GRADE : ${fx(telemetry.roadGrade, 1)}%`, rX + 6, pY + 40);
+    const stopDist = telemetry.vMs > 1 ? Math.round((telemetry.vMs * telemetry.vMs) / (2 * 0.75 * 9.81)) : 0;
+    text(`EST STOPPING: ${stopDist} M`, rX + 6, pY + 54);
+
+    // --- 10. SYSTEM PARAMETERS ---
+    const statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25);
+    ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
+    const accStr = (!isSimulating && telemetry.gpsAccuracy > 0 && telemetry.gpsAccuracy < 900) ? ` ±${Math.round(telemetry.gpsAccuracy)}M` : "";
+    text(`SRC : ${telemetry.sensorType}`, -vW/2 + 25, statusY);
+    text(`GPS : ${telemetry.gpsStatus}${accStr}`, -vW/2 + 25, statusY + 11);
+    text(`G   : ${telemetry.gSrc}`, -vW/2 + 25, statusY + 22);
+    ctx.textAlign = "right";
+    text(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 25, statusY);
+    text(`STREAM : ${isStreaming ? (isSimulating ? 'BLOCKED (SIM)' : 'ONLINE ' + streamSent) : 'OFFLINE'}`, vW/2 - 25, statusY + 11);
+    text(`AXIS   : ${isSimulating ? 'SIM' : Fusion.axisState()}`, vW/2 - 25, statusY + 22);
+
+    if (telemetry.warnings.length > 0) {
+        ctx.fillStyle = isSimulating ? "#ffa500" : "#ff3333"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center";
+        if (isSimulating && Math.floor(now / 600) % 2 === 0) ctx.globalAlpha = 0.45;
+        telemetry.warnings.forEach((warn, idx) => { text(`▶ ${warn} ◀`, 0, -vH/4 + 4 + idx * 13); });
+        ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+}
+
+/* ---------- Döngü: hata olsa bile durmaz ---------- */
+let loopRunning = false;
+function animateOnce() {
+    if (loopRunning) return; loopRunning = true;
+    const loop = () => {
+        try { frame(); }
+        catch (err) {
+            console.error(err);
+            try { for (let i = 0; i < 12; i++) ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0); } catch (e) {}
         }
-
-        function startGPSTracking() {
-            if (!navigator.geolocation) { telemetry.gpsStatus = "NOT SUPPORTED"; return; }
-            navigator.geolocation.watchPosition((pos) => {
-                if (isSimulating) return;
-                let currentSpeed = 0; const now = Date.now();
-                telemetry.gpsAccuracy = pos.coords.accuracy;
-                telemetry.gpsStatus = pos.coords.accuracy <= 6 ? "GOOD" : (pos.coords.accuracy <= 15 ? "OK" : "POOR");
-
-                if (pos.coords.speed !== null && pos.coords.speed >= 0) {
-                    currentSpeed = pos.coords.speed * 3.6;
-                } else if (lastLat !== null && lastGpsTime !== null) {
-                    const timeDelta = (now - lastGpsTime) / 1000;
-                    if (timeDelta > 0.2) {
-                        const distance = calculateDistance(lastLat, lastLon, pos.coords.latitude, pos.coords.longitude);
-                        const calculatedSpeedMS = distance / timeDelta;
-                        if (calculatedSpeedMS >= 0.1 && calculatedSpeedMS < 75) currentSpeed = calculatedSpeedMS * 3.6;
-                        if (timers.d400m.state === 1) timers.d400m.dist += distance;
-                    }
-                }
-                telemetry.speed = Math.round(currentSpeed);
-                if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) telemetry.gpsHeading = pos.coords.heading;
-
-                if (pos.coords.altitude !== null) {
-                    let currentAlt = pos.coords.altitude;
-                    if (lastGpsTime !== null) {
-                        let dt = (now - lastGpsTime) / 1000;
-                        if (dt > 0.5) {
-                            let diffAlt = currentAlt - telemetry.lastAltitude;
-                            telemetry.verticalSpeed = (telemetry.verticalSpeed * 0.7) + ((diffAlt / dt) * 0.3);
-                            let speedMS = currentSpeed / 3.6;
-                            telemetry.roadGrade = speedMS > 1 ? (telemetry.verticalSpeed / speedMS) * 100 : 0;
-                            telemetry.lastAltitude = currentAlt;
-                        }
-                    } else { telemetry.lastAltitude = currentAlt; }
-                    telemetry.altitude = Math.round(currentAlt);
-                }
-                lastLat = pos.coords.latitude; lastLon = pos.coords.longitude; lastGpsTime = now;
-            }, (err) => { 
-                if(!isSimulating) telemetry.gpsStatus = err.code === err.PERMISSION_DENIED ? "GPS BLOCKED" : "NO SIGNAL";
-            }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-        }
-
-        startBtn.addEventListener('click', async () => {
-            overlay.style.display = 'none';
-            timers.lapStart = Date.now();
-            await requestHardwarePermissions();
-            startGPSTracking();
-            animate();
-        });
-
-        function handleOrientation(event) {
-            if (isSimulating || event.beta === null || event.gamma === null) return;
-            telemetry.rawPitch = event.beta; telemetry.rawRoll = event.gamma;
-            if (!isCalibrated) { offset.pitch = event.beta; offset.roll = event.gamma; isCalibrated = true; }
-            let relativePitch = event.beta - offset.pitch; let relativeRoll = event.gamma - offset.roll;
-            let filterFactor = telemetry.speed < 5 ? 0.20 : 0.04;
-            telemetry.pitch = (telemetry.pitch * (1 - filterFactor)) + (relativePitch * filterFactor);
-            telemetry.roll = (telemetry.roll * (1 - filterFactor)) + (relativeRoll * filterFactor);
-            
-            if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
-                telemetry.compassHeading = event.webkitCompassHeading;
-            } else if (event.alpha !== null) {
-                telemetry.compassHeading = 360 - event.alpha;
-            }
-            telemetry.horizonQuality = (Math.abs(telemetry.pitch) > 45 || Math.abs(telemetry.roll) > 50) ? "DEGRADED" : "OK";
-        }
-
-        function handleMotion(event) {
-            if (isSimulating || !event.accelerationIncludingGravity) return;
-            let acc = event.accelerationIncludingGravity;
-            if (offset.ax === 0 && offset.ay === 0) { offset.ax = acc.x; offset.ay = acc.y; offset.az = acc.z - 9.81; return; }
-            telemetry.lateralX = acc.x; telemetry.longitudinalY = acc.y;
-            telemetry.latG = (telemetry.latG * 0.85) + (((acc.x - offset.ax) / 9.81) * 0.15);
-            telemetry.lonG = (telemetry.lonG * 0.85) + (((acc.y - offset.ay) / 9.81) * 0.15);
-            telemetry.vertG = (telemetry.vertG * 0.85) + (((acc.z - offset.az) / 9.81) * 0.15);
-        }
-
-        calibrateBtn.addEventListener('click', () => {
-            if (isSimulating) return;
-            offset.pitch = telemetry.rawPitch; offset.roll = telemetry.rawRoll;
-            offset.ax = telemetry.lateralX || 0; offset.ay = telemetry.longitudinalY || 0; isCalibrated = true;
-            gHistory = []; slipHistory = [];
-        });
-
-        streamBtn.addEventListener('click', () => {
-            isStreaming = !isStreaming;
-            if (isStreaming) {
-                streamBuffer = []; lastSendTime = Date.now();
-                streamBtn.classList.add('streaming-active'); streamBtn.innerText = "YAYIN AKTİF";
-            } else {
-                streamBtn.classList.remove('streaming-active'); streamBtn.innerText = "CANLI YAYIN";
-            }
-        });
-
-        lapBtn.addEventListener('click', () => {
-            let currentLapTime = (Date.now() - timers.lapStart) / 1000; timers.currentLap = currentLapTime;
-            if (timers.bestLap === 0 || currentLapTime < timers.bestLap) timers.bestLap = currentLapTime;
-            timers.lapStart = Date.now();
-        });
-
-        function formatLapTime(sec) {
-            if (sec === 0) return "--:--.---";
-            let m = Math.floor(sec / 60); let s = Math.floor(sec % 60); let ms = Math.floor((sec % 1) * 1000);
-            return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
-        }
-
-        function updateTimers() {
-            let speed = telemetry.speed; let now = Date.now();
-            if (speed > 0.5 && timers.p0_100.state === 0) { timers.p0_100.start = now; timers.p0_100.state = 1; timers.d400m.start = now; timers.d400m.state = 1; timers.d400m.dist = 0; }
-            if (timers.p0_100.state === 1) { timers.p0_100.time = (now - timers.p0_100.start) / 1000; if (speed >= 100) { timers.p0_100.state = 2; timers.p100_200.start = now; timers.p100_200.state = 1; } }
-            if (timers.p100_200.state === 1) { timers.p100_200.time = (now - timers.p100_200.start) / 1000; if (speed >= 200) timers.p100_200.state = 2; if (speed < 90) timers.p100_200.state = 0; }
-            if (timers.d400m.state === 1) { timers.d400m.time = (now - timers.d400m.start) / 1000; if (timers.d400m.dist >= 400) timers.d400m.state = 2; }
-            if (speed === 0 && (timers.p0_100.state === 2 || timers.d400m.state === 2)) { timers.p0_100.state = 0; timers.p100_200.state = 0; timers.d400m.state = 0; }
-        }
-
-        function handleLiveStreaming(now) {
-            if (!isStreaming) return;
-            if (now - lastSampleTime >= 1000) {
-                streamBuffer.push({
-                    time: new Date().toLocaleTimeString('tr-TR'), pitch: telemetry.pitch.toFixed(2), roll: telemetry.roll.toFixed(2),
-                    speed: telemetry.speed, heading: Math.round(telemetry.heading), alt: telemetry.altitude,
-                    latG: telemetry.latG.toFixed(3), lonG: telemetry.lonG.toFixed(3), vertG: telemetry.vertG.toFixed(3), grade: telemetry.roadGrade.toFixed(1)
-                });
-                lastSampleTime = now;
-            }
-            if (now - lastSendTime >= 3000 && streamBuffer.length > 0) {
-                const payload = JSON.stringify(streamBuffer); streamBuffer = []; lastSendTime = now;
-                fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: payload }).catch(e => console.log(e));
-            }
-        }
-
-        function animate() {
-            const w = window.innerWidth; const h = window.innerHeight; const theme = THEMES[currentThemeIdx];
-            let now = Date.now(); let dt = (now - lastUpdateTime) / 1000; lastUpdateTime = now;
-
-            // SANITIZATION: Değerlerin NaN (Tanımsız) olup çizimi kitlemesini engelliyoruz
-            if (isNaN(telemetry.speed)) telemetry.speed = 0;
-            if (isNaN(telemetry.pitch)) telemetry.pitch = 0;
-            if (isNaN(telemetry.roll)) telemetry.roll = 0;
-            if (isNaN(telemetry.latG)) telemetry.latG = 0;
-            if (isNaN(telemetry.lonG)) telemetry.lonG = 0;
-
-            if (isSimulating) {
-                let simTime = now / 1000;
-                telemetry.speed = Math.round(95 + 60 * Math.sin(simTime * 0.4));
-                telemetry.compassHeading = (simTime * 12) % 360;
-                telemetry.pitch = 6 * Math.sin(simTime * 0.5);
-                telemetry.roll = 22 * Math.cos(simTime * 0.35); 
-                telemetry.lonG = 0.5 * Math.cos(simTime * 0.4);
-                telemetry.latG = -0.75 * Math.sin(simTime * 0.35); 
-                telemetry.altitude = Math.round(210 + 25 * Math.sin(simTime * 0.1));
-                telemetry.verticalSpeed = 1.5 * Math.cos(simTime * 0.1);
-                telemetry.roadGrade = (telemetry.verticalSpeed / ((telemetry.speed/3.6)||1)) * 100;
-                telemetry.gpsStatus = "GOOD (MOCK)"; telemetry.gpsAccuracy = 1.0; telemetry.heading = telemetry.compassHeading; telemetry.sensorType = "SIMULATION";
-            } else {
-                let screenAngle = window.orientation || (screen.orientation && screen.orientation.angle) || 0;
-                let correctedCompass = (telemetry.compassHeading + screenAngle) % 360;
-                if (w < h) { correctedCompass = (telemetry.compassHeading + 90) % 360; }
-                if (telemetry.speed > 12 && telemetry.gpsHeading !== null) {
-                    telemetry.heading = telemetry.gpsHeading; telemetry.sensorType = "GPS TRACK";
-                } else {
-                    telemetry.heading = correctedCompass; telemetry.sensorType = "MAG HEADING";
-                }
-            }
-
-            if (dt > 0 && !isSimulating) {
-                let hdgDiff = telemetry.heading - telemetry.lastHeading;
-                if (hdgDiff > 180) hdgDiff -= 360; if (hdgDiff < -180) hdgDiff += 360;
-                telemetry.yawRate = (telemetry.yawRate * 0.8) + ((hdgDiff / dt) * 0.2); telemetry.lastHeading = telemetry.heading;
-                let omega = Math.abs(telemetry.yawRate) * Math.PI / 180; let speedMS = telemetry.speed / 3.6;
-                telemetry.radius = (omega > 0.01 && speedMS > 2) ? Math.round(speedMS / omega) : 0;
-            } else if (isSimulating) {
-                telemetry.yawRate = 15 * Math.cos(now / 1000);
-                telemetry.radius = telemetry.speed > 10 ? Math.round((telemetry.speed/3.6) / (Math.abs(telemetry.yawRate)*Math.PI/180)) : 0;
-            }
-
-            gHistory.push({ latG: telemetry.latG, lonG: telemetry.lonG });
-            if (gHistory.length > MAX_HISTORY_LENGTH) gHistory.shift();
-
-            slipHistory.push({ latG: telemetry.latG });
-            if (slipHistory.length > MAX_HISTORY_LENGTH) slipHistory.shift();
-
-            handleLiveStreaming(now); updateTimers();
-
-            telemetry.warnings = [];
-            if (!isSimulating) {
-                if (telemetry.gpsStatus.includes("BLOCKED")) telemetry.warnings.push("GPS BLOCKED BY BROWSER");
-                if (telemetry.horizonQuality === "DEGRADED") telemetry.warnings.push("ATT DEGRADED");
-                if (!isCalibrated) telemetry.warnings.push("CALIBRATION NEEDED");
-            }
-
-            ctx.clearRect(0, 0, w, h); ctx.save();
-            let vW, vH; let isPortraitSimulated = false;
-
-            if (w < h) { ctx.translate(w / 2, h / 2); ctx.rotate(Math.PI / 2); vW = h; vH = w; isPortraitSimulated = true; } 
-            else { ctx.translate(w / 2, h / 2); vW = w; vH = h; }
-
-            let tapeH = vH * 0.52; 
-            // ÇENTİKTEN KURTARMA: Kenar payları 42px/55px'den 85px/95px güvenli alanına çekildi!
-            let leftTapeX = -vW / 2 + (isPortraitSimulated ? 85 : 95);
-            let rightTapeX = vW / 2 - 60 - (isPortraitSimulated ? 85 : 95);
-
-            // --- 1. COMPASS RIBBON ---
-            let ribbonY = -vH / 2 + (isPortraitSimulated ? 35 : 20);
-            ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(-vW/3, ribbonY, (vW/3)*2, 22);
-            ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5; ctx.strokeRect(-vW/3, ribbonY, (vW/3)*2, 22);
-            ctx.save(); ctx.beginPath(); ctx.rect(-vW/3, ribbonY, (vW/3)*2, 22); ctx.clip();
-            ctx.fillStyle = theme.main; ctx.textAlign = "center"; ctx.font = "bold 11px monospace";
-            let centerHdg = telemetry.heading; let pxPerDeg = 2.5;
-            for (let hDeg = Math.floor(centerHdg - 40); hDeg <= centerHdg + 40; hDeg++) {
-                let normDeg = (hDeg + 360) % 360; let xPos = (hDeg - centerHdg) * pxPerDeg;
-                if (normDeg % 5 === 0) {
-                    let isMajor = normDeg % 10 === 0; ctx.beginPath(); ctx.moveTo(xPos, ribbonY + (isMajor ? 0 : 6)); ctx.lineTo(xPos, ribbonY + 12); ctx.stroke();
-                    if (isMajor) {
-                        let label = String(normDeg / 10).padStart(2, '0');
-                        if (normDeg === 0) label = "N"; if (normDeg === 90) label = "E"; if (normDeg === 180) label = "S"; if (normDeg === 270) label = "W";
-                        ctx.fillText(label, xPos, ribbonY + 20);
-                    }
-                }
-            }
-            ctx.restore();
-            ctx.fillStyle = "#ff3333"; ctx.beginPath(); ctx.moveTo(0, ribbonY + 24); ctx.lineTo(-5, ribbonY + 31); ctx.lineTo(5, ribbonY + 31); ctx.closePath(); ctx.fill();
-
-            // --- 2. MINIMAL ATTITUDE WIDGET ---
-            let attY = ribbonY + 55;
-            ctx.save(); ctx.translate(0, attY); ctx.rotate(-telemetry.roll * Math.PI / 180);
-            let pShift = telemetry.pitch * 1.5;
-            ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(-30, pShift); ctx.lineTo(30, pShift); ctx.stroke(); 
-            ctx.beginPath(); ctx.moveTo(-15, pShift - 10); ctx.lineTo(15, pShift - 10); ctx.moveTo(-15, pShift + 10); ctx.lineTo(15, pShift + 10); ctx.stroke(); 
-            ctx.restore();
-            ctx.strokeStyle = theme.main; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(-35, attY); ctx.lineTo(-15, attY); ctx.lineTo(-11, attY + 4); ctx.moveTo(35, attY); ctx.lineTo(15, attY); ctx.lineTo(11, attY + 4); ctx.moveTo(-2, attY); ctx.lineTo(2, attY); ctx.stroke();
-            ctx.fillStyle = theme.main; ctx.font = "9px monospace"; ctx.textAlign = "center";
-            ctx.fillText(`P: ${telemetry.pitch >= 0 ? '+' : ''}${Math.round(telemetry.pitch)}°  R: ${Math.round(telemetry.roll)}°`, 0, attY - 15);
-
-            // --- 3. TRACTION CIRCLE & G-BALL (MERKEZ GÖSTERGE VE DETAYLI İÇERİK) ---
-            let gX = 0; let gY = attY + 95; let gBallRadius = 65;
-            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.33, 0, 2*Math.PI); ctx.stroke();
-            ctx.beginPath(); ctx.arc(gX, gY, gBallRadius * 0.66, 0, 2*Math.PI); ctx.stroke();
-            ctx.strokeStyle = "rgba(255,255,255,0.3)";
-            ctx.beginPath(); ctx.arc(gX, gY, gBallRadius, 0, 2*Math.PI); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(gX - gBallRadius, gY); ctx.lineTo(gX + gBallRadius, gY); ctx.moveTo(gX, gY - gBallRadius); ctx.lineTo(gX, gY + gBallRadius); ctx.stroke();
-            ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "7px monospace"; ctx.textAlign = "center";
-            ctx.fillText("0.5G", gX, gY - (gBallRadius*0.33) + 2); ctx.fillText("1.0G", gX, gY - (gBallRadius*0.66) + 2); ctx.fillText("1.5G", gX, gY - gBallRadius + 2);
-            
-            // G-Kuvveti İz Geçmişi Çizgileri
-            ctx.save();
-            for (let i = 0; i < gHistory.length; i++) {
-                let h = gHistory[i];
-                let hX = gX - (h.latG * (gBallRadius / 1.5)); let hY = gY + (h.lonG * (gBallRadius / 1.5));
-                ctx.globalAlpha = (i / gHistory.length) * 0.50; ctx.fillStyle = "#ff0055";
-                ctx.beginPath(); ctx.arc(hX, hY, 2.5, 0, 2*Math.PI); ctx.fill();
-            }
-            ctx.restore();
-
-            // Canlı G-Ball Topu ve Dinamik Vektör Çizgisi
-            let ballX = gX - (telemetry.latG * (gBallRadius / 1.5)); let ballY = gY + (telemetry.lonG * (gBallRadius / 1.5));
-            ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gX, gY); ctx.lineTo(ballX, ballY); ctx.stroke();
-            ctx.fillStyle = "#ff0055"; ctx.beginPath(); ctx.arc(ballX, ballY, 6, 0, 2*Math.PI); ctx.fill();
-            
-            // Merkez Göstergenin Sayısal Canlı İçerikleri
-            ctx.fillStyle = theme.main; ctx.font = "bold 11px monospace"; ctx.textAlign = "right";
-            ctx.fillText(`LAT G: ${telemetry.latG.toFixed(2)}`, -gBallRadius - 12, gY + 4);
-            ctx.textAlign = "left"; ctx.fillText(`LON G: ${telemetry.lonG.toFixed(2)}`, gBallRadius + 12, gY + 4);
-
-            // --- 4. SLIP / SKID INDICATOR ---
-            let slipY = gY + gBallRadius + 24;
-            let slipW = Math.min(vW * 0.65, 400); 
-            ctx.strokeStyle = theme.main; ctx.lineWidth = 1.5;
-            ctx.strokeRect(gX - slipW/2, slipY, slipW, 8);
-            ctx.beginPath(); ctx.moveTo(gX - slipW/4, slipY); ctx.lineTo(gX - slipW/4, slipY + 8); ctx.moveTo(gX + slipW/4, slipY); ctx.lineTo(gX + slipW/4, slipY + 8); ctx.stroke(); 
-
-            ctx.save();
-            for (let i = 0; i < slipHistory.length; i++) {
-                let h = slipHistory[i]; let hBallX = gX - (h.latG * (slipW * 0.45)); 
-                hBallX = Math.max(gX - (slipW/2 - 4), Math.min(gX + (slipW/2 - 4), hBallX));
-                ctx.globalAlpha = (i / slipHistory.length) * 0.50; ctx.fillStyle = theme.main;
-                ctx.beginPath(); ctx.arc(hBallX, slipY + 4, 2, 0, 2*Math.PI); ctx.fill();
-            }
-            ctx.restore();
-
-            let slipBallX = gX - (telemetry.latG * (slipW * 0.45));
-            slipBallX = Math.max(gX - (slipW/2 - 4), Math.min(gX + (slipW/2 - 4), slipBallX));
-            ctx.fillStyle = theme.main; ctx.beginPath(); ctx.arc(slipBallX, slipY + 4, 4, 0, 2*Math.PI); ctx.fill();
-            ctx.font = "bold 8px monospace"; ctx.textAlign = "center"; ctx.fillText("SLIP / SKID SYSTEM", gX, slipY - 5);
-
-            // --- 5. YAW / RADIUS ---
-            let driftInfoY = slipY + 24;
-            ctx.fillStyle = "#00ffff"; ctx.font = "10px monospace"; ctx.textAlign = "center";
-            let radiusStr = (telemetry.radius > 0 && telemetry.radius < 1500) ? `${telemetry.radius} M` : '---';
-            ctx.fillText(`RADIUS: ${radiusStr}`, gX, driftInfoY);
-            ctx.fillStyle = theme.main; ctx.fillText(`YAW RATE: ${Math.round(telemetry.yawRate)}°/S`, gX, driftInfoY + 11);
-
-            // --- 6. SPEED TAPE (SÜRAT SAATİ / SOL GÖSTERGE) ---
-            ctx.save(); ctx.beginPath(); ctx.rect(leftTapeX, -tapeH/2, 60, tapeH); ctx.clip();
-            ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(leftTapeX, -tapeH/2, 60, tapeH);
-            ctx.strokeStyle = theme.main; ctx.strokeRect(leftTapeX, -tapeH/2, 60, tapeH);
-            ctx.fillStyle = theme.main; ctx.textAlign = "right"; ctx.font = "11px monospace";
-            let startSpeed = Math.floor(telemetry.speed / 10) * 10 - 40;
-            for (let s = startSpeed; s <= startSpeed + 80; s += 10) { 
-                if (s < 0) continue; 
-                let sY = (telemetry.speed - s) * 3.5; 
-                ctx.beginPath(); ctx.moveTo(leftTapeX + 60, sY); ctx.lineTo(leftTapeX + 52, sY); ctx.stroke(); 
-                ctx.fillText(s, leftTapeX + 46, sY + 4); 
-            }
-            ctx.restore();
-            // Sabit Dijital Hız Penceresi
-            ctx.fillStyle = "#000000"; ctx.fillRect(leftTapeX - 15, -14, 85, 28); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(leftTapeX - 15, -14, 85, 28);
-            ctx.fillStyle = theme.main; ctx.font = "bold 14px monospace"; ctx.textAlign = "left"; ctx.fillText(String(telemetry.speed).padStart(3,'0'), leftTapeX - 6, 5); ctx.font = "bold 8px monospace"; ctx.fillText("KM/H", leftTapeX + 26, 4);
-
-            // --- 7. ALTITUDE TAPE (ALTİMETRE / SAĞ GÖSTERGE) ---
-            ctx.save(); ctx.beginPath(); ctx.rect(rightTapeX, -tapeH/2, 60, tapeH); ctx.clip();
-            ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(rightTapeX, -tapeH/2, 60, tapeH);
-            ctx.strokeStyle = theme.main; ctx.strokeRect(rightTapeX, -tapeH/2, 60, tapeH);
-            ctx.fillStyle = theme.main; ctx.textAlign = "left"; ctx.font = "11px monospace";
-            let startAlt = Math.floor(telemetry.altitude / 20) * 20 - 40;
-            for (let a = startAlt; a <= startAlt + 80; a += 20) { 
-                let aY = (telemetry.altitude - a) * 1.5; 
-                ctx.beginPath(); ctx.moveTo(rightTapeX, aY); ctx.lineTo(rightTapeX + 8, aY); ctx.stroke(); 
-                ctx.fillText(a, rightTapeX + 14, aY + 4); 
-            }
-            ctx.restore();
-            // Sabit Dijital Rakım Penceresi
-            ctx.fillStyle = "#000000"; ctx.fillRect(rightTapeX - 10, -14, 85, 28); ctx.strokeStyle = "#ffffff"; ctx.strokeRect(rightTapeX - 10, -14, 85, 28);
-            ctx.fillStyle = theme.main; ctx.font = "bold 12px monospace"; ctx.textAlign = "right"; ctx.fillText(telemetry.altitude + "M", rightTapeX + 55, 4);
-            let vsiX = rightTapeX + 82; ctx.strokeStyle = theme.main; ctx.beginPath(); ctx.moveTo(vsiX, -25); ctx.lineTo(vsiX, 25); ctx.stroke();
-            ctx.fillStyle = "#00ffff"; ctx.beginPath(); ctx.arc(vsiX, Math.max(-25, Math.min(25, -telemetry.verticalSpeed * 5)), 3, 0, 2*Math.PI); ctx.fill();
-
-            // --- 8. TIMERS & DRAG LAP ---
-            let pX = leftTapeX; let pY = vH / 2 - (isPortraitSimulated ? 95 : 110);
-            ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(pX, pY, 150, 68); ctx.strokeStyle = theme.main; ctx.strokeRect(pX, pY, 150, 68);
-            ctx.fillStyle = theme.main; ctx.font = "bold 8px monospace"; ctx.textAlign = "left";
-            ctx.fillText(`0-100 KM/H : ${timers.p0_100.time.toFixed(2)}s`, pX + 6, pY + 12); ctx.fillText(`100-200 H  : ${timers.p100_200.time.toFixed(2)}s`, pX + 6, pY + 23); ctx.fillText(`400M DRAG  : ${timers.d400m.time.toFixed(2)}s (${Math.round(timers.d400m.dist)}m)`, pX + 6, pY + 34);
-            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.moveTo(pX, pY+39); ctx.lineTo(pX+150, pY+39); ctx.stroke();
-            ctx.fillStyle = "#00ffff"; ctx.fillText(`CUR LAP: ${formatLapTime((Date.now() - timers.lapStart)/1000)}`, pX + 6, pY + 50); ctx.fillText(`BEST   : ${formatLapTime(timers.bestLap)}`, pX + 6, pY + 61);
-
-            // --- 9. ROAD GRADE & STOPPING ---
-            let rX = rightTapeX + 60 - 140;
-            ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(rX, pY + 28, 140, 40); ctx.strokeStyle = theme.main; ctx.strokeRect(rX, pY + 28, 140, 40);
-            ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
-            ctx.fillText(`ROAD GRADE : ${telemetry.roadGrade.toFixed(1)}%`, rX + 6, pY + 40);
-            let stopDist = telemetry.speed > 3 ? Math.round((Math.pow(telemetry.speed/3.6,2))/(2*0.75*9.81)) : 0;
-            ctx.fillText(`EST STOPPING: ${stopDist} M`, rX + 6, pY + 54);
-
-            // --- 10. SYSTEM PARAMETERS ---
-            let statusY = -vH / 2 + (isPortraitSimulated ? 42 : 25); ctx.fillStyle = theme.main; ctx.font = "8px monospace"; ctx.textAlign = "left";
-            ctx.fillText(`SRC : ${telemetry.sensorType}`, -vW/2 + 25, statusY); ctx.fillText(`GPS : ${telemetry.gpsStatus}`, -vW/2 + 25, statusY + 11);
-            ctx.textAlign = "right"; ctx.fillText(`HORIZON: ${telemetry.horizonQuality}`, vW/2 - 25, statusY); ctx.fillText(`STREAM : ${isStreaming ? 'ONLINE' : 'OFFLINE'}`, vW/2 - 25, statusY + 11);
-            
-            if (telemetry.warnings.length > 0 && !telemetry.gpsStatus.includes("BLOCKED")) { 
-                ctx.fillStyle = "#ff3333"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; 
-                telemetry.warnings.forEach((warn, idx) => { ctx.fillText(`▶ ${warn} ◀`, 0, -vH/4 + (idx * 13)); }); 
-            }
-
-            ctx.restore(); requestAnimationFrame(animate);
-        }
-    </script>
+        requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+}
+</script>
 </body>
 </html>
