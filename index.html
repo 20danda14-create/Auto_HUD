@@ -393,6 +393,19 @@ function showDiag(html, ms) {
     if (ms) diagTimer = setTimeout(() => { diag.style.display = 'none'; }, ms);
 }
 function hideDiag() { diag.style.display = 'none'; }
+diag.addEventListener('click', () => { hideDiag(); if (started && !isSimulating) { telemetry.gpsStatus = "SEARCHING"; startGPSTracking(); } });
+
+// İzin durumu değişirse (ayarlardan açıldıysa) otomatik toparla
+function watchPermissionChanges() {
+    try {
+        if (!navigator.permissions || !navigator.permissions.query) return;
+        navigator.permissions.query({ name: 'geolocation' }).then(ps => {
+            ps.onchange = () => {
+                if (ps.state === 'granted' && started && !isSimulating) { hideDiag(); telemetry.gpsStatus = "SEARCHING"; startGPSTracking(); }
+            };
+        }).catch(() => {});
+    } catch (e) {}
+}
 
 if (!window.isSecureContext) {
     showDiag('⚠️ BAĞLANTI GÜVENLİ DEĞİL (HTTPS ZORUNLUDUR)<br><span style="font-size:0.72rem;font-weight:normal">GPS ve sensör verileri HTTP üzerinden engellenir. Lütfen https:// ile açın.</span>');
@@ -474,7 +487,7 @@ function onGpsError(err) {
     if (isSimulating || !err) return;
     if (err.code === 1) {
         telemetry.gpsStatus = "GPS BLOCKED";
-        showDiag('⚠️ KONUM İZNİ REDDEDİLDİ<br><span style="font-size:0.72rem;font-weight:normal">Ayarlar › Gizlilik › Konum Servisleri › Safari Web Siteleri › "Uygulamayı Kullanırken" seçin, sayfayı yenileyin.</span>');
+        showDiag('⚠️ KONUM İZNİ REDDEDİLDİ<br><span style="font-size:0.72rem;font-weight:normal">Ayarı değiştirdiyseniz uygulamayı tamamen kapatıp yeniden açın. Bu kutuya dokunarak da yeniden deneyebilirsiniz.</span>');
     } else if (err.code === 2) {
         telemetry.gpsStatus = "NO SIGNAL";
     } else if (telemetry.gpsStatus !== "GOOD" && telemetry.gpsStatus !== "OK") {
@@ -499,7 +512,7 @@ function onPosition(pos) {
     if (acc > GPS_CFG.ACC_MAX) { telemetry.gpsStatus = "WEAK"; return; }  // hız için kullanma
     telemetry.gpsStatus = acc <= 10 ? "GOOD" : (acc <= 25 ? "OK" : "POOR");
     gps.lastGoodWall = wall;
-    if (diag.style.display === 'block' && telemetry.gpsStatus !== "GPS BLOCKED") hideDiag();
+    if (diag.style.display === 'block') hideDiag();
 
     const dt = gps.lastFixTs ? (ts - gps.lastFixTs) / 1000 : 0;
     const cur = { lat: c.latitude, lon: c.longitude };
@@ -716,6 +729,7 @@ async function beginSystems(sim) {
     try { if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') perms.push(DeviceMotionEvent.requestPermission()); } catch (e) {}
     try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') perms.push(DeviceOrientationEvent.requestPermission()); } catch (e) {}
     startGPSTracking();
+    watchPermissionChanges();
     acquireWake();
     try { await Promise.all(perms.map(p => p.catch(() => null))); } catch (e) {}
     addSensorListeners();
@@ -754,6 +768,9 @@ function simStep(now) {
 function realStep(now, dt) {
     const age = now - gps.lastGoodWall;
     const hasEverFix = gps.lastGoodWall > 0;
+
+    // --- İzin engelliyse periyodik yeniden dene (ayar sonradan açılmış olabilir) ---
+    if (telemetry.gpsStatus === "GPS BLOCKED" && now - (gps.lastRetry || 0) > 4000) { gps.lastRetry = now; startGPSTracking(); }
 
     // --- Sinyal bekçisi ---
     if (hasEverFix) {
